@@ -556,34 +556,51 @@ class Admin(commands.Cog):
         download_url = "https://speed.hetzner.de/10MB.bin"
         timeout = aiohttp.ClientTimeout(total=25)
 
+        async def run_speed_test(session: aiohttp.ClientSession):
+            latencies = []
+            bytes_total = 0
+
+            # Latency test (3 probes)
+            for _ in range(3):
+                start = time.perf_counter()
+                async with session.get(latency_url) as resp:
+                    await resp.read()
+                end = time.perf_counter()
+                latencies.append((end - start) * 1000)
+
+            # Download test (read up to 5 MB for quick estimate)
+            max_bytes = 5 * 1024 * 1024
+            start_dl = time.perf_counter()
+            async with session.get(download_url) as resp:
+                async for chunk in resp.content.iter_chunked(64 * 1024):
+                    if not chunk:
+                        break
+                    bytes_total += len(chunk)
+                    if bytes_total >= max_bytes:
+                        break
+            end_dl = time.perf_counter()
+
+            elapsed = max(end_dl - start_dl, 1e-6)
+            speed_mbps = (bytes_total * 8) / (elapsed * 1_000_000)
+            return latencies, bytes_total, speed_mbps
+
         latencies_ms = []
         download_mbps = None
         bytes_read = 0
+        insecure_fallback_used = False
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                # Latency test (3 probes)
-                for _ in range(3):
-                    start = time.perf_counter()
-                    async with session.get(latency_url) as resp:
-                        await resp.read()
-                    end = time.perf_counter()
-                    latencies_ms.append((end - start) * 1000)
-
-                # Download test (read up to 5 MB for quick estimate)
-                max_bytes = 5 * 1024 * 1024
-                start_dl = time.perf_counter()
-                async with session.get(download_url) as resp:
-                    async for chunk in resp.content.iter_chunked(64 * 1024):
-                        if not chunk:
-                            break
-                        bytes_read += len(chunk)
-                        if bytes_read >= max_bytes:
-                            break
-                end_dl = time.perf_counter()
-
-                elapsed = max(end_dl - start_dl, 1e-6)
-                download_mbps = (bytes_read * 8) / (elapsed * 1_000_000)
+                latencies_ms, bytes_read, download_mbps = await run_speed_test(session)
+        except aiohttp.ClientConnectorCertificateError:
+            try:
+                connector = aiohttp.TCPConnector(ssl=False)
+                async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+                    latencies_ms, bytes_read, download_mbps = await run_speed_test(session)
+                    insecure_fallback_used = True
+            except Exception as e:
+                await load_msg.edit(content=f"❌ `SPEED TEST FAILED: {type(e).__name__}`")
+                return
         except Exception as e:
             await load_msg.edit(content=f"❌ `SPEED TEST FAILED: {type(e).__name__}`")
             return
@@ -602,6 +619,8 @@ class Admin(commands.Cog):
         embed.add_field(name="Download Speed", value=f"`{download_mbps:.2f} Mbps`" if download_mbps is not None else "`N/A`", inline=True)
         embed.add_field(name="Data Sampled", value=f"`{bytes_read / (1024 * 1024):.2f} MB`", inline=True)
         embed.add_field(name="Method", value="`HTTP probe + partial download`", inline=True)
+        if insecure_fallback_used:
+            embed.add_field(name="TLS Mode", value="`Fallback: cert verification disabled`", inline=False)
         embed.set_footer(text="Restricted command • Approximate speed test")
 
         await load_msg.edit(content=None, embed=embed)
