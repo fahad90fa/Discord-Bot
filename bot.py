@@ -93,10 +93,15 @@ async def on_message(message):
 
 # Run Global Security Protocol
 if __name__ == "__main__":
-    # Get token from environment variable
-    DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-    if not DISCORD_TOKEN:
-        print("❌ ERROR: DISCORD_TOKEN not found in .env file!")
+    # Prefer Railway/dashboard env vars, but keep local .env compatibility.
+    discord_token = (
+        os.getenv("DISCORD_TOKEN")
+        or os.getenv("BOT_TOKEN")
+        or os.getenv("TOKEN")
+    )
+    if not discord_token:
+        print("❌ ERROR: Discord token is missing.")
+        print("Set DISCORD_TOKEN in Railway Service -> Variables.")
         exit(1)
-    
-    bot.run(DISCORD_TOKEN)
+
+    bot.run(discord_token)
