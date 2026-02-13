@@ -41,7 +41,8 @@ class AttendanceButton(discord.ui.View):
         super().__init__(timeout=None)
         self.bot = bot
 
-    async def _mark_status(self, interaction: discord.Interaction, status: str):
+    @discord.ui.button(label="✅ Mark Attendance", style=discord.ButtonStyle.green, custom_id="mark_attendance_universal")
+    async def mark_attendance(self, interaction: discord.Interaction, button: discord.ui.Button):
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
         
@@ -140,7 +141,7 @@ class AttendanceButton(discord.ui.View):
 
         # Save attendance status
         attendance_data[guild_id][user_batch_role_id][today][user_id] = {
-            "status": status,
+            "status": "present",
             "time": now.strftime("%I:%M %p"),
             "username": interaction.user.name
         }
@@ -151,49 +152,36 @@ class AttendanceButton(discord.ui.View):
         if log_channel_id:
             log_channel = interaction.guild.get_channel(int(log_channel_id))
             if log_channel:
-                status_label = "PRESENT" if status == "present" else "ABSENT"
-                status_emoji = "✅" if status == "present" else "❌"
                 log_embed = discord.Embed(
                     title="📋 ATTENDANCE LOG",
                     description=(
                         f"**User:** {interaction.user.name} (`{interaction.user.id}`)\n"
                         f"**Batch:** {user_batch_name}\n"
-                        f"**Status:** {status_emoji} {status_label}\n"
+                        f"**Status:** ✅ PRESENT\n"
                         f"**Date:** {today}\n"
                         f"**Time:** {now.strftime('%I:%M %p')}"
                     ),
-                    color=0x2ecc71 if status == "present" else 0xe74c3c
+                    color=0x2ecc71
                 )
                 log_embed.set_thumbnail(url=interaction.user.display_avatar.url)
                 log_embed.set_footer(text="Trader Union Globale • Attendance Log")
                 log_embed.timestamp = now
                 await log_channel.send(embed=log_embed)
 
-        status_label = "PRESENT" if status == "present" else "ABSENT"
-        status_color = 0x2ecc71 if status == "present" else 0xe74c3c
-        status_emoji = "✅" if status == "present" else "❌"
         embed = discord.Embed(
-            title=f"{status_emoji} ATTENDANCE MARKED",
+            title="✅ ATTENDANCE MARKED",
             description=(
                 "```ansi\n"
-                f"\u001b[1;32mSTATUS :\u001b[0m \u001b[0;37m{status_label}\u001b[0m\n"
+                "\u001b[1;32mSTATUS :\u001b[0m \u001b[0;37mPRESENT\u001b[0m\n"
                 f"\u001b[1;32mDATE   :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
                 f"\u001b[1;32mTIME   :\u001b[0m \u001b[0;37m{now.strftime('%I:%M %p')}\u001b[0m\n"
                 f"\u001b[1;32mBATCH  :\u001b[0m \u001b[0;37m{user_batch_name}\u001b[0m\n"
                 "```"
             ),
-            color=status_color
+            color=0x2ecc71
         )
         embed.set_footer(text="Trader Union Globale • Attendance System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="✅ Present", style=discord.ButtonStyle.green, custom_id="mark_attendance_present")
-    async def mark_present(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._mark_status(interaction, "present")
-
-    @discord.ui.button(label="❌ Absent", style=discord.ButtonStyle.red, custom_id="mark_attendance_absent")
-    async def mark_absent(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._mark_status(interaction, "absent")
 
 
 class EditAttendanceView(discord.ui.View):
@@ -518,8 +506,7 @@ class Attendance(commands.Cog):
             "\u001b[1;36m◈ WINDOW    :\u001b[0m \u001b[0;37m4:00 PM - 9:00 PM\u001b[0m\n"
             "\u001b[1;36m◈ STATUS    :\u001b[0m \u001b[1;32mOPEN\u001b[0m\n"
             "```\n\n"
-            ">>> Click one button below to mark your status\n"
-            "✅ Present | ❌ Absent\n"
+            ">>> Click the button below to mark your attendance\n"
             "*Bot will automatically detect your batch*"
         )
         embed.set_image(url="https://i.pinimg.com/originals/17/d4/28/17d4284ce3ca7a29d116ac50e5e22818.gif")

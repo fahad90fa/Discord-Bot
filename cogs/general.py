@@ -73,7 +73,7 @@ class HelpDropdown(discord.ui.Select):
                 "```ansi\n"
                 "\u001b[1;36mBATCH ATTENDANCE TRACKING SYSTEM\u001b[0m\n"
                 "\u001b[0;37mTime: 4PM-9PM (Mon-Fri)\u001b[0m\n"
-                "\u001b[0;37mButtons: Present / Absent (One mark per day)\u001b[0m\n"
+                "\u001b[0;37mButton: Mark Attendance (One mark per day)\u001b[0m\n"
                 "```"
             )
             embed.add_field(name="⚙️ [SETUP]", value="```ansi\n\u001b[0;37m-setattendancechannel #channel\n-setattendancelog #channel\n-addbatch @role BatchName\n-setupattendance\u001b[0m\n```", inline=False)
