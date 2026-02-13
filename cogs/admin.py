@@ -7,6 +7,8 @@ import os
 import platform
 import socket
 import shutil
+import time
+import aiohttp
 from datetime import datetime, timezone
 from .utils import (
     load_data, save_data, set_modlog_channel, 
@@ -541,6 +543,68 @@ class Admin(commands.Cog):
         embed.add_field(name="Runtime", value=f"`{sys.executable}`", inline=False)
         embed.set_footer(text="Restricted command • System diagnostics")
         await ctx.send(embed=embed)
+
+    @commands.command(name="internetspeed", aliases=["speedtest", "netspeed"])
+    async def internet_speed(self, ctx):
+        """Check internet latency and download speed (Specific User Only)"""
+        if ctx.author.id != 1170979888019292261:
+            return await ctx.send("❌ You don't have permission to use this command.")
+
+        load_msg = await ctx.send("🌐 `RUNNING NETWORK SPEED CHECK...`")
+
+        latency_url = "https://www.google.com/generate_204"
+        download_url = "https://speed.hetzner.de/10MB.bin"
+        timeout = aiohttp.ClientTimeout(total=25)
+
+        latencies_ms = []
+        download_mbps = None
+        bytes_read = 0
+
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # Latency test (3 probes)
+                for _ in range(3):
+                    start = time.perf_counter()
+                    async with session.get(latency_url) as resp:
+                        await resp.read()
+                    end = time.perf_counter()
+                    latencies_ms.append((end - start) * 1000)
+
+                # Download test (read up to 5 MB for quick estimate)
+                max_bytes = 5 * 1024 * 1024
+                start_dl = time.perf_counter()
+                async with session.get(download_url) as resp:
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        if not chunk:
+                            break
+                        bytes_read += len(chunk)
+                        if bytes_read >= max_bytes:
+                            break
+                end_dl = time.perf_counter()
+
+                elapsed = max(end_dl - start_dl, 1e-6)
+                download_mbps = (bytes_read * 8) / (elapsed * 1_000_000)
+        except Exception as e:
+            await load_msg.edit(content=f"❌ `SPEED TEST FAILED: {type(e).__name__}`")
+            return
+
+        avg_latency = sum(latencies_ms) / len(latencies_ms) if latencies_ms else None
+        min_latency = min(latencies_ms) if latencies_ms else None
+        max_latency = max(latencies_ms) if latencies_ms else None
+
+        embed = discord.Embed(
+            title="🌐 INTERNET SPEED CHECK",
+            color=0x3498db,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Average Latency", value=f"`{avg_latency:.1f} ms`" if avg_latency is not None else "`N/A`", inline=True)
+        embed.add_field(name="Min/Max Latency", value=f"`{min_latency:.1f}/{max_latency:.1f} ms`" if min_latency is not None else "`N/A`", inline=True)
+        embed.add_field(name="Download Speed", value=f"`{download_mbps:.2f} Mbps`" if download_mbps is not None else "`N/A`", inline=True)
+        embed.add_field(name="Data Sampled", value=f"`{bytes_read / (1024 * 1024):.2f} MB`", inline=True)
+        embed.add_field(name="Method", value="`HTTP probe + partial download`", inline=True)
+        embed.set_footer(text="Restricted command • Approximate speed test")
+
+        await load_msg.edit(content=None, embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
