@@ -69,7 +69,13 @@ class HelpDropdown(discord.ui.Select):
         elif self.values[0] == "Attendance System":
             embed.title = "📋 SECTOR: ATTENDANCE"
             embed.color = 0x3498db
-            embed.description = "```ansi\n\u001b[1;36mBATCH ATTENDANCE TRACKING SYSTEM\u001b[0m\n\u001b[0;37mTime: 4PM-9PM (Mon-Fri)\u001b[0m\n```"
+            embed.description = (
+                "```ansi\n"
+                "\u001b[1;36mBATCH ATTENDANCE TRACKING SYSTEM\u001b[0m\n"
+                "\u001b[0;37mTime: 4PM-9PM (Mon-Fri)\u001b[0m\n"
+                "\u001b[0;37mButtons: Present / Absent (One mark per day)\u001b[0m\n"
+                "```"
+            )
             embed.add_field(name="⚙️ [SETUP]", value="```ansi\n\u001b[0;37m-setattendancechannel #channel\n-setattendancelog #channel\n-addbatch @role BatchName\n-setupattendance\u001b[0m\n```", inline=False)
             embed.add_field(name="📊 [VIEW]", value="```ansi\n\u001b[0;37m-listbatches\n-attendancefordate DD/MM/YY\n-showuserattendance @user\u001b[0m\n```", inline=False)
             embed.add_field(name="📝 [EDIT]", value="```ansi\n\u001b[0;37m-edituserattendance @user DD/MM/YY present/absent\n-editattendancefordate DD/MM/YY\n-removebatch BatchName\u001b[0m\n```", inline=False)
@@ -79,6 +85,7 @@ class HelpDropdown(discord.ui.Select):
             embed.title = "⚙️ SECTOR: UTILITIES"
             embed.color = 0x9b59b6
             embed.add_field(name="🕵️ [USERINFO]", value="```ansi\n\u001b[0;37mEntity Metadata Scan.\u001b[0m\n```", inline=False)
+            embed.add_field(name="👥 [MEMBERCOUNT / MC]", value="```ansi\n\u001b[0;37mServer member statistics.\u001b[0m\n```", inline=False)
             embed.add_field(name="🔗 [SOCIAL]", value="```ansi\n\u001b[0;37mUnion Network Links.\u001b[0m\n```", inline=False)
             embed.add_field(name="📷 [AVATAR]", value="```ansi\n\u001b[0;37mVisual Identity Profile.\u001b[0m\n```", inline=False)
             embed.add_field(name="📦 [STEAL]", value="```ansi\n\u001b[0;37mAsset (Emoji) Extraction.\u001b[0m\n```", inline=False)
@@ -90,9 +97,10 @@ class HelpDropdown(discord.ui.Select):
             embed.description = "```ansi\n\u001b[1;33m⚠️ ALL COMMANDS OWNER-ONLY (Except CHECK)\u001b[0m\n```"
             embed.add_field(name="💰 [UNION CHECK]", value="```ansi\n\u001b[0;37mView points & rank (Public).\u001b[0m\n```", inline=False)
             embed.add_field(name="🏆 [UNION LB]", value="```ansi\n\u001b[0;37mView leaderboard (Owner).\u001b[0m\n```", inline=False)
+            embed.add_field(name="ℹ️ [UNION]", value="```ansi\n\u001b[0;37mBase command only. Use subcommands.\u001b[0m\n```", inline=False)
             embed.add_field(name="✅ [UNION ADD]", value="```ansi\n\u001b[0;37mAdd points (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="❌ [UNION REMOVE]", value="```ansi\n\u001b[0;37mRemove points (Owner).\u001b[0m\n```", inline=False)
-            embed.add_field(name="🔄 [UNION RESET]", value="```ansi\n\u001b[0;37mReset user points (Owner).\u001b[0m\n```", inline=False)
+            embed.add_field(name="🔄 [UNION RESET]", value="```ansi\n\u001b[0;37mReset user / all points (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="📋 [UNION LOGS]", value="```ansi\n\u001b[0;37mView action logs (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="👥 [UNION MANAGERS]", value="```ansi\n\u001b[0;37mList managers (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="📡 [UNION SETLB]", value="```ansi\n\u001b[0;37mSetup live leaderboard (Owner).\u001b[0m\n```", inline=False)

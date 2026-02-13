@@ -118,10 +118,10 @@ class AttendanceButton(discord.ui.View):
         day_data = attendance_data[guild_id][user_batch_role_id][today]
         current_status, current_time = get_user_day_status(day_data, user_id)
 
-        # Check if same status already marked
-        if user_id in day_data and current_status == status:
-            status_label = "PRESENT" if status == "present" else "ABSENT"
-            emoji = "✅" if status == "present" else "❌"
+        # Students can mark only once per day (cannot switch present/absent later).
+        if user_id in day_data:
+            status_label = "PRESENT" if current_status == "present" else "ABSENT"
+            emoji = "✅" if current_status == "present" else "❌"
             embed = discord.Embed(
                 title="📋 ALREADY MARKED",
                 description=(
@@ -131,6 +131,7 @@ class AttendanceButton(discord.ui.View):
                     f"\u001b[1;33mDATE  :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
                     f"\u001b[1;33mSTATUS:\u001b[0m \u001b[0;37m{emoji} {status_label}\u001b[0m\n"
                     f"\u001b[1;33mTIME  :\u001b[0m \u001b[0;37m{current_time or 'N/A'}\u001b[0m\n"
+                    "\u001b[1;31mNOTE  :\u001b[0m \u001b[0;37mStatus cannot be changed by students\u001b[0m\n"
                     "```"
                 ),
                 color=0xf39c12
