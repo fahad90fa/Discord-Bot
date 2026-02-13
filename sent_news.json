@@ -1,0 +1,56 @@
+{
+    "Building Permits m/m_CAD_2026-02-11T18:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471211814930088061,
+        "actual": "-13.1%"
+    },
+    "Average Hourly Earnings m/m_USD_2026-02-11T18:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471211817085829226,
+        "actual": ""
+    },
+    "Non-Farm Employment Change_USD_2026-02-11T18:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471211819178659862,
+        "actual": ""
+    },
+    "Unemployment Rate_USD_2026-02-11T18:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471211821003182356,
+        "actual": ""
+    },
+    "FOMC Member Schmid Speaks_USD_2026-02-11T20:00:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471234556433662054,
+        "actual": ""
+    },
+    "FOMC Member Bowman Speaks_USD_2026-02-11T20:15:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471238330493571185,
+        "actual": ""
+    },
+    "Crude Oil Inventories_USD_2026-02-11T20:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471242105618698323,
+        "actual": ""
+    },
+    "10-y Bond Auction_USD_2026-02-11T23:01:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471280106335895657,
+        "actual": ""
+    },
+    "BOC Summary of Deliberations_CAD_2026-02-11T23:30:00+00:00": {
+        "reminder_sent": true,
+        "alert_sent": true,
+        "msg_id": 1471287404391436330,
+        "actual": ""
+    }
+}

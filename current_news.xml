@@ -1,0 +1,160 @@
+<weeklyevents>
+    <event>
+        <title>MPC Member Mann Speaks</title>
+        <country>GBP</country>
+        <date>02-11-2026</date>
+        <time>2:00am</time>
+        <impact>Medium</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>API Weekly Statistical Bulletin</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>2:30am</time>
+        <impact>Low</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>Bank Holiday</title>
+        <country>JPY</country>
+        <date>02-11-2026</date>
+        <time>All Day</time>
+        <impact>Holiday</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>RBA Deputy Gov Hauser Speaks</title>
+        <country>AUD</country>
+        <date>02-11-2026</date>
+        <time>6:30am</time>
+        <impact>Medium</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>CPI y/y</title>
+        <country>CNY</country>
+        <date>02-11-2026</date>
+        <time>6:30am</time>
+        <impact>High</impact>
+        <forecast>0.4%</forecast>
+        <previous>0.2%</previous>
+        <actual>0.8%</actual>
+    </event>
+    <event>
+        <title>PPI y/y</title>
+        <country>CNY</country>
+        <date>02-11-2026</date>
+        <time>6:30am</time>
+        <impact>Low</impact>
+        <forecast>-1.5%</forecast>
+        <previous>-1.4%</previous>
+        <actual>-1.9%</actual>
+    </event>
+    <event>
+        <title>Italian Industrial Production m/m</title>
+        <country>EUR</country>
+        <date>02-11-2026</date>
+        <time>2:00pm</time>
+        <impact>Low</impact>
+        <forecast>-0.6%</forecast>
+        <previous>-0.4%</previous>
+        <actual>1.5%</actual>
+    </event>
+    <event>
+        <title>German 30-y Bond Auction</title>
+        <country>EUR</country>
+        <date>02-11-2026</date>
+        <time>3:33pm</time>
+        <impact>Low</impact>
+        <forecast></forecast>
+        <previous>2.4|3.49</previous>
+        <actual>2.6|3.47</actual>
+    </event>
+    <event>
+        <title>Building Permits m/m</title>
+        <country>CAD</country>
+        <date>02-11-2026</date>
+        <time>6:30pm</time>
+        <impact>Medium</impact>
+        <forecast></forecast>
+        <previous>4.9%</previous>
+        <actual>-13.1%</actual>
+    </event>
+    <event>
+        <title>Average Hourly Earnings m/m</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>6:30pm</time>
+        <impact>High</impact>
+        <forecast>0.3%</forecast>
+        <previous>0.3%</previous>
+    </event>
+    <event>
+        <title>Non-Farm Employment Change</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>6:30pm</time>
+        <impact>High</impact>
+        <forecast>50K</forecast>
+        <previous>66K</previous>
+    </event>
+    <event>
+        <title>Unemployment Rate</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>6:30pm</time>
+        <impact>High</impact>
+        <forecast>4.4%</forecast>
+        <previous>4.4%</previous>
+    </event>
+    <event>
+        <title>FOMC Member Schmid Speaks</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>8:00pm</time>
+        <impact>Medium</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>FOMC Member Bowman Speaks</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>8:15pm</time>
+        <impact>Medium</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+    <event>
+        <title>Crude Oil Inventories</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>8:30pm</time>
+        <impact>Medium</impact>
+        <forecast>-3.5M</forecast>
+        <previous>-0.2M</previous>
+    </event>
+    <event>
+        <title>10-y Bond Auction</title>
+        <country>USD</country>
+        <date>02-11-2026</date>
+        <time>11:01pm</time>
+        <impact>High</impact>
+        <forecast></forecast>
+        <previous>2.6|4.17</previous>
+    </event>
+    <event>
+        <title>BOC Summary of Deliberations</title>
+        <country>CAD</country>
+        <date>02-11-2026</date>
+        <time>11:30pm</time>
+        <impact>High</impact>
+        <forecast></forecast>
+        <previous></previous>
+    </event>
+</weeklyevents>

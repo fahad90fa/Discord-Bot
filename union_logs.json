@@ -1,0 +1,82 @@
+[
+    {
+        "timestamp": "2026-02-11T22:06:23.071939+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1170979888019292261,
+        "target_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "points": 100,
+        "reason": "test"
+    },
+    {
+        "timestamp": "2026-02-11T22:06:48.705212+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1368206959316041894,
+        "target_name": "!                     Ahmed ~ \ud83e\udd0d",
+        "points": 10,
+        "reason": "test"
+    },
+    {
+        "timestamp": "2026-02-11T22:07:22.552539+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1037886658462371860,
+        "target_name": "M A A R I J",
+        "points": 300,
+        "reason": "lol"
+    },
+    {
+        "timestamp": "2026-02-11T22:41:14.900115+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1037886658462371860,
+        "target_name": "M A A R I J",
+        "points": 19,
+        "reason": "loro"
+    },
+    {
+        "timestamp": "2026-02-11T22:41:38.076289+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1170979888019292261,
+        "target_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "points": 12,
+        "reason": "test"
+    },
+    {
+        "timestamp": "2026-02-11T22:43:28.771395+05:00",
+        "manager_id": 1368206959316041894,
+        "manager_name": "!                     Ahmed ~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1470700651901091850,
+        "target_name": "Attendance TEST",
+        "points": 10,
+        "reason": "test"
+    },
+    {
+        "timestamp": "2026-02-11T22:45:17.448366+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1368206959316041894,
+        "target_name": "!                     Ahmed ~ \ud83e\udd0d",
+        "points": 100,
+        "reason": "lol"
+    },
+    {
+        "timestamp": "2026-02-11T22:48:47.521935+05:00",
+        "manager_id": 1170979888019292261,
+        "manager_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "action": "ADD",
+        "target_id": 1170979888019292261,
+        "target_name": "! \ud835\ude3f\ud835\ude4d\ud835\ude3c\ud835\ude46~ \ud83e\udd0d",
+        "points": 199,
+        "reason": "ok"
+    }
+]

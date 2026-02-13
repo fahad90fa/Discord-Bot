@@ -1,0 +1,18 @@
+{
+    "1470701580239245346": {
+        "anticaps": {
+            "enabled": true,
+            "punishment": "mute",
+            "duration": 10,
+            "min_len": 4,
+            "ratio": 0.4
+        },
+        "antiemoji": {
+            "enabled": true,
+            "punishment": "mute",
+            "duration": 10,
+            "limit": 5
+        },
+        "bypass_role": 1471031164251672647
+    }
+}
