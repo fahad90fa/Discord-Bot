@@ -546,7 +546,7 @@ class Admin(commands.Cog):
 
     @commands.command(name="internetspeed", aliases=["speedtest", "netspeed"])
     async def internet_speed(self, ctx):
-        """Check internet latency and download speed (Specific User Only)"""
+        """Check internet latency and download/upload speed (Specific User Only)"""
         if ctx.author.id != 1170979888019292261:
             return await ctx.send("❌ You don't have permission to use this command.")
 
@@ -554,11 +554,13 @@ class Admin(commands.Cog):
 
         latency_url = "https://www.google.com/generate_204"
         download_url = "https://speed.hetzner.de/10MB.bin"
+        upload_url = "https://httpbin.org/post"
         timeout = aiohttp.ClientTimeout(total=25)
 
         async def run_speed_test(session: aiohttp.ClientSession):
             latencies = []
-            bytes_total = 0
+            bytes_download = 0
+            bytes_upload = 0
 
             # Latency test (3 probes)
             for _ in range(3):
@@ -575,28 +577,42 @@ class Admin(commands.Cog):
                 async for chunk in resp.content.iter_chunked(64 * 1024):
                     if not chunk:
                         break
-                    bytes_total += len(chunk)
-                    if bytes_total >= max_bytes:
+                    bytes_download += len(chunk)
+                    if bytes_download >= max_bytes:
                         break
             end_dl = time.perf_counter()
 
-            elapsed = max(end_dl - start_dl, 1e-6)
-            speed_mbps = (bytes_total * 8) / (elapsed * 1_000_000)
-            return latencies, bytes_total, speed_mbps
+            elapsed_dl = max(end_dl - start_dl, 1e-6)
+            download_mbps = (bytes_download * 8) / (elapsed_dl * 1_000_000)
+
+            # Upload test (send 2 MB payload for quick estimate)
+            upload_payload = os.urandom(2 * 1024 * 1024)
+            bytes_upload = len(upload_payload)
+            start_ul = time.perf_counter()
+            async with session.post(upload_url, data=upload_payload) as resp:
+                await resp.read()
+            end_ul = time.perf_counter()
+
+            elapsed_ul = max(end_ul - start_ul, 1e-6)
+            upload_mbps = (bytes_upload * 8) / (elapsed_ul * 1_000_000)
+
+            return latencies, bytes_download, download_mbps, bytes_upload, upload_mbps
 
         latencies_ms = []
         download_mbps = None
-        bytes_read = 0
+        upload_mbps = None
+        bytes_download = 0
+        bytes_upload = 0
         insecure_fallback_used = False
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                latencies_ms, bytes_read, download_mbps = await run_speed_test(session)
+                latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = await run_speed_test(session)
         except aiohttp.ClientConnectorCertificateError:
             try:
                 connector = aiohttp.TCPConnector(ssl=False)
                 async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                    latencies_ms, bytes_read, download_mbps = await run_speed_test(session)
+                    latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = await run_speed_test(session)
                     insecure_fallback_used = True
             except Exception as e:
                 await load_msg.edit(content=f"❌ `SPEED TEST FAILED: {type(e).__name__}`")
@@ -608,6 +624,8 @@ class Admin(commands.Cog):
         avg_latency = sum(latencies_ms) / len(latencies_ms) if latencies_ms else None
         min_latency = min(latencies_ms) if latencies_ms else None
         max_latency = max(latencies_ms) if latencies_ms else None
+        download_mbs = (download_mbps / 8) if download_mbps is not None else None
+        upload_mbs = (upload_mbps / 8) if upload_mbps is not None else None
 
         embed = discord.Embed(
             title="🌐 INTERNET SPEED CHECK",
@@ -616,9 +634,19 @@ class Admin(commands.Cog):
         )
         embed.add_field(name="Average Latency", value=f"`{avg_latency:.1f} ms`" if avg_latency is not None else "`N/A`", inline=True)
         embed.add_field(name="Min/Max Latency", value=f"`{min_latency:.1f}/{max_latency:.1f} ms`" if min_latency is not None else "`N/A`", inline=True)
-        embed.add_field(name="Download Speed", value=f"`{download_mbps:.2f} Mbps`" if download_mbps is not None else "`N/A`", inline=True)
-        embed.add_field(name="Data Sampled", value=f"`{bytes_read / (1024 * 1024):.2f} MB`", inline=True)
-        embed.add_field(name="Method", value="`HTTP probe + partial download`", inline=True)
+        embed.add_field(
+            name="Download",
+            value=f"`{download_mbs:.2f} MB/s` ({download_mbps:.2f} Mbps)" if download_mbps is not None else "`N/A`",
+            inline=False
+        )
+        embed.add_field(
+            name="Upload",
+            value=f"`{upload_mbs:.2f} MB/s` ({upload_mbps:.2f} Mbps)" if upload_mbps is not None else "`N/A`",
+            inline=False
+        )
+        embed.add_field(name="Download Sample", value=f"`{bytes_download / (1024 * 1024):.2f} MB`", inline=True)
+        embed.add_field(name="Upload Sample", value=f"`{bytes_upload / (1024 * 1024):.2f} MB`", inline=True)
+        embed.add_field(name="Method", value="`HTTP probe + partial download/upload`", inline=False)
         if insecure_fallback_used:
             embed.add_field(name="TLS Mode", value="`Fallback: cert verification disabled`", inline=False)
         embed.set_footer(text="Restricted command • Approximate speed test")
