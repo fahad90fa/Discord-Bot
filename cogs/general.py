@@ -89,7 +89,7 @@ class HelpDropdown(discord.ui.Select):
             embed.color = 0xf39c12
             embed.description = "```ansi\n\u001b[1;33m⚠️ ALL COMMANDS OWNER-ONLY (Except CHECK)\u001b[0m\n```"
             embed.add_field(name="💰 [UNION CHECK]", value="```ansi\n\u001b[0;37mView points & rank (Public).\u001b[0m\n```", inline=False)
-            embed.add_field(name="🏆 [UNION / UNION LB]", value="```ansi\n\u001b[0;37mView leaderboard (Owner).\u001b[0m\n```", inline=False)
+            embed.add_field(name="🏆 [UNION LB]", value="```ansi\n\u001b[0;37mView leaderboard (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="✅ [UNION ADD]", value="```ansi\n\u001b[0;37mAdd points (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="❌ [UNION REMOVE]", value="```ansi\n\u001b[0;37mRemove points (Owner).\u001b[0m\n```", inline=False)
             embed.add_field(name="🔄 [UNION RESET]", value="```ansi\n\u001b[0;37mReset user points (Owner).\u001b[0m\n```", inline=False)
@@ -120,6 +120,29 @@ class HelpView(discord.ui.View):
 class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.command(name="membercount", aliases=["mc"])
+    async def member_count(self, ctx):
+        """Show server member count"""
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.send("❌ This command can only be used in a server.")
+
+        total_members = guild.member_count or len(guild.members)
+        human_members = sum(1 for m in guild.members if not m.bot)
+        bot_members = sum(1 for m in guild.members if m.bot)
+
+        embed = discord.Embed(
+            title="👥 MEMBER COUNT",
+            color=0x3498db,
+            description=(
+                f"**Server:** {guild.name}\n"
+                f"**Total:** `{total_members}`\n"
+                f"**Humans:** `{human_members}`\n"
+                f"**Bots:** `{bot_members}`"
+            ),
+        )
+        await ctx.send(embed=embed)
 
     @commands.command()
     async def afk(self, ctx, *, reason="AFK"):

@@ -161,6 +161,11 @@ async def update_leaderboard_message(bot):
         
         # Create updated leaderboard embed
         points_data = get_points()
+        points_data = {
+            user_id: data
+            for user_id, data in points_data.items()
+            if data.get("points", 0) > 0
+        }
         
         if not points_data:
             embed = discord.Embed(
@@ -222,8 +227,8 @@ class UnionPoints(commands.Cog):
 
     @commands.group(name="union", invoke_without_command=True)
     async def union(self, ctx):
-        """Union points system - Shows leaderboard"""
-        await ctx.invoke(self.leaderboard)
+        """Union points system"""
+        return
 
     @union.command(name="add")
     @is_owner_check()
@@ -332,25 +337,26 @@ class UnionPoints(commands.Cog):
         # Update live leaderboard
         await update_leaderboard_message(self.bot)
 
-    @union.command(name="reset")
+    @union.group(name="reset", invoke_without_command=True)
     @is_owner_check()
-    async def reset_points(self, ctx, member: discord.Member, *, reason: str):
-        """Reset a user's points to 0 (Manager/Owner only)"""
-        # Load points
+    async def reset_points(self, ctx, member: discord.Member = None, *, reason: str = None):
+        """Reset a user's points to 0. Use `union reset all <reason>` for everyone."""
+        if member is None or reason is None:
+            return await ctx.send("Usage: `union reset @member <reason>` or `union reset all <reason>`")
+
         points_data = get_points()
         user_id = str(member.id)
-        
+
         if user_id not in points_data:
             return await ctx.send("❌ This user has no points!")
-        
+
         old_points = points_data[user_id]["points"]
         points_data[user_id]["points"] = 0
         points_data[user_id]["name"] = member.display_name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
-        
+
         save_points(points_data)
-        
-        # Log action
+
         log_entry = log_action(
             ctx.author.id,
             ctx.author.display_name,
@@ -360,31 +366,72 @@ class UnionPoints(commands.Cog):
             old_points,
             reason
         )
-        
-        # Send log to channel
+
         await send_log_to_channel(self.bot, log_entry)
-        
-        # Send confirmation
+
         embed = discord.Embed(
             title="🔄 POINTS RESET",
             description=f"**{member.mention}**'s points have been reset",
             color=0x9b59b6
         )
         embed.add_field(name="📊 Previous", value=f"`{old_points}`", inline=True)
-        embed.add_field(name="📉 New Total", value=f"`0`", inline=True)
+        embed.add_field(name="📉 New Total", value="`0`", inline=True)
         embed.add_field(name="📋 Reason", value=reason, inline=False)
         embed.set_footer(text=f"Action by {ctx.author.display_name} • {datetime.now(pytz.timezone('Asia/Karachi')).strftime('%I:%M %p PKT')}")
-        
+
         await ctx.send(embed=embed)
-        
-        # Update live leaderboard
         await update_leaderboard_message(self.bot)
+
+    @reset_points.command(name="all")
+    @is_owner_check()
+    async def reset_all_points(self, ctx, *, reason: str):
+        """Reset all tracked users to 0 points"""
+        points_data = get_points()
+        if not points_data:
+            return await ctx.send("❌ No points data to reset.")
+
+        now_iso = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
+        reset_count = 0
+
+        for user_id, user_data in points_data.items():
+            old_points = user_data.get("points", 0)
+            user_data["points"] = 0
+            user_data["last_updated"] = now_iso
+            reset_count += 1
+
+            log_entry = log_action(
+                ctx.author.id,
+                ctx.author.display_name,
+                "RESET",
+                int(user_id),
+                user_data.get("name", f"User {user_id}"),
+                old_points,
+                reason
+            )
+            await send_log_to_channel(self.bot, log_entry)
+
+        save_points(points_data)
+        await update_leaderboard_message(self.bot)
+
+        embed = discord.Embed(
+            title="🔄 ALL UNION POINTS RESET",
+            description=f"Reset **{reset_count}** users to `0` points.",
+            color=0x9b59b6
+        )
+        embed.add_field(name="📋 Reason", value=reason, inline=False)
+        embed.set_footer(text=f"Action by {ctx.author.display_name}")
+        await ctx.send(embed=embed)
 
     @union.command(name="leaderboard", aliases=["lb", "top"])
     @is_owner_check()
     async def leaderboard(self, ctx):
         """Show the Union Points leaderboard"""
         points_data = get_points()
+        points_data = {
+            user_id: data
+            for user_id, data in points_data.items()
+            if data.get("points", 0) > 0
+        }
         
         if not points_data:
             return await ctx.send("📊 No points data yet!")
@@ -581,6 +628,11 @@ class UnionPoints(commands.Cog):
         
         # Create initial leaderboard embed
         points_data = get_points()
+        points_data = {
+            user_id: data
+            for user_id, data in points_data.items()
+            if data.get("points", 0) > 0
+        }
         
         if not points_data:
             embed = discord.Embed(

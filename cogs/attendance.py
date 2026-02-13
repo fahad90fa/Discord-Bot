@@ -20,13 +20,28 @@ def save_json(file, data):
         json.dump(data, f, indent=2)
 
 
+def get_user_day_status(day_data: dict, user_id: str):
+    """Return normalized status/time for a user from attendance day data."""
+    record = day_data.get(user_id)
+    if not record:
+        return "absent", None
+
+    # Backward compatibility: older records may not have status.
+    if not isinstance(record, dict):
+        return "present", None
+
+    status = str(record.get("status", "present")).lower()
+    if status not in {"present", "absent"}:
+        status = "present"
+    return status, record.get("time")
+
+
 class AttendanceButton(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
 
-    @discord.ui.button(label="✅ Mark Attendance", style=discord.ButtonStyle.green, custom_id="mark_attendance_universal")
-    async def mark_attendance(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _mark_status(self, interaction: discord.Interaction, status: str):
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
         
@@ -100,24 +115,31 @@ class AttendanceButton(discord.ui.View):
         if today not in attendance_data[guild_id][user_batch_role_id]:
             attendance_data[guild_id][user_batch_role_id][today] = {}
         
-        # Check if already marked
-        if user_id in attendance_data[guild_id][user_batch_role_id][today]:
+        day_data = attendance_data[guild_id][user_batch_role_id][today]
+        current_status, current_time = get_user_day_status(day_data, user_id)
+
+        # Check if same status already marked
+        if user_id in day_data and current_status == status:
+            status_label = "PRESENT" if status == "present" else "ABSENT"
+            emoji = "✅" if status == "present" else "❌"
             embed = discord.Embed(
                 title="📋 ALREADY MARKED",
                 description=(
                     "```ansi\n"
                     "\u001b[1;33mINFO  :\u001b[0m \u001b[0;37mYou already marked attendance today\u001b[0m\n"
                     f"\u001b[1;33mBATCH :\u001b[0m \u001b[0;37m{user_batch_name}\u001b[0m\n"
-                    f"\u001b[1;33mTIME  :\u001b[0m \u001b[0;37m{attendance_data[guild_id][user_batch_role_id][today][user_id]['time']}\u001b[0m\n"
+                    f"\u001b[1;33mDATE  :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
+                    f"\u001b[1;33mSTATUS:\u001b[0m \u001b[0;37m{emoji} {status_label}\u001b[0m\n"
+                    f"\u001b[1;33mTIME  :\u001b[0m \u001b[0;37m{current_time or 'N/A'}\u001b[0m\n"
                     "```"
                 ),
                 color=0xf39c12
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        # Save attendance
+
+        # Save attendance status
         attendance_data[guild_id][user_batch_role_id][today][user_id] = {
-            "status": "present",
+            "status": status,
             "time": now.strftime("%I:%M %p"),
             "username": interaction.user.name
         }
@@ -128,35 +150,49 @@ class AttendanceButton(discord.ui.View):
         if log_channel_id:
             log_channel = interaction.guild.get_channel(int(log_channel_id))
             if log_channel:
+                status_label = "PRESENT" if status == "present" else "ABSENT"
+                status_emoji = "✅" if status == "present" else "❌"
                 log_embed = discord.Embed(
                     title="📋 ATTENDANCE LOG",
                     description=(
                         f"**User:** {interaction.user.name} (`{interaction.user.id}`)\n"
                         f"**Batch:** {user_batch_name}\n"
+                        f"**Status:** {status_emoji} {status_label}\n"
                         f"**Date:** {today}\n"
                         f"**Time:** {now.strftime('%I:%M %p')}"
                     ),
-                    color=0x2ecc71
+                    color=0x2ecc71 if status == "present" else 0xe74c3c
                 )
                 log_embed.set_thumbnail(url=interaction.user.display_avatar.url)
                 log_embed.set_footer(text="Trader Union Globale • Attendance Log")
                 log_embed.timestamp = now
                 await log_channel.send(embed=log_embed)
-        
+
+        status_label = "PRESENT" if status == "present" else "ABSENT"
+        status_color = 0x2ecc71 if status == "present" else 0xe74c3c
+        status_emoji = "✅" if status == "present" else "❌"
         embed = discord.Embed(
-            title="✅ ATTENDANCE MARKED",
+            title=f"{status_emoji} ATTENDANCE MARKED",
             description=(
                 "```ansi\n"
-                f"\u001b[1;32mSTATUS :\u001b[0m \u001b[0;37mPRESENT\u001b[0m\n"
+                f"\u001b[1;32mSTATUS :\u001b[0m \u001b[0;37m{status_label}\u001b[0m\n"
                 f"\u001b[1;32mDATE   :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
                 f"\u001b[1;32mTIME   :\u001b[0m \u001b[0;37m{now.strftime('%I:%M %p')}\u001b[0m\n"
                 f"\u001b[1;32mBATCH  :\u001b[0m \u001b[0;37m{user_batch_name}\u001b[0m\n"
                 "```"
             ),
-            color=0x2ecc71
+            color=status_color
         )
         embed.set_footer(text="Trader Union Globale • Attendance System")
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="✅ Present", style=discord.ButtonStyle.green, custom_id="mark_attendance_present")
+    async def mark_present(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._mark_status(interaction, "present")
+
+    @discord.ui.button(label="❌ Absent", style=discord.ButtonStyle.red, custom_id="mark_attendance_absent")
+    async def mark_absent(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._mark_status(interaction, "absent")
 
 
 class EditAttendanceView(discord.ui.View):
@@ -211,12 +247,13 @@ class EditAttendanceView(discord.ui.View):
         if role:
             for member in role.members:
                 user_id = str(member.id)
-                if user_id in batch_data:
+                status_value, time_marked = get_user_day_status(batch_data, user_id)
+                if status_value == "present":
                     status = "✅ Present"
-                    time_marked = batch_data[user_id].get("time", "N/A")
+                    time_marked = time_marked or "N/A"
                 else:
                     status = "❌ Absent"
-                    time_marked = "—"
+                    time_marked = time_marked or "—"
                 members_list.append(f"{member.name} | {status} | {time_marked}")
         
         embed = discord.Embed(
@@ -295,8 +332,9 @@ class Attendance(commands.Cog):
                 
                 for member in role.members:
                     user_id = str(member.id)
-                    if user_id in batch_data:
-                        present_list.append(f"{member.name} ({batch_data[user_id].get('time', 'N/A')})")
+                    status_value, time_marked = get_user_day_status(batch_data, user_id)
+                    if status_value == "present":
+                        present_list.append(f"{member.name} ({time_marked or 'N/A'})")
                         all_present.append(f"{member.name} - {batch_name}")
                     else:
                         absent_list.append(member.name)
@@ -479,7 +517,8 @@ class Attendance(commands.Cog):
             "\u001b[1;36m◈ WINDOW    :\u001b[0m \u001b[0;37m4:00 PM - 9:00 PM\u001b[0m\n"
             "\u001b[1;36m◈ STATUS    :\u001b[0m \u001b[1;32mOPEN\u001b[0m\n"
             "```\n\n"
-            ">>> Click the button below to mark your attendance\n"
+            ">>> Click one button below to mark your status\n"
+            "✅ Present | ❌ Absent\n"
             "*Bot will automatically detect your batch*"
         )
         embed.set_image(url="https://i.pinimg.com/originals/17/d4/28/17d4284ce3ca7a29d116ac50e5e22818.gif")
@@ -586,8 +625,9 @@ class Attendance(commands.Cog):
             
             for member in batch_role.members:
                 user_id = str(member.id)
-                if user_id in batch_data:
-                    present_list.append(f"{member.name} ✅ Present ({batch_data[user_id].get('time', 'N/A')})")
+                status_value, time_marked = get_user_day_status(batch_data, user_id)
+                if status_value == "present":
+                    present_list.append(f"{member.name} ✅ Present ({time_marked or 'N/A'})")
                 else:
                     absent_list.append(f"{member.name} ❌ Absent")
             
@@ -675,20 +715,15 @@ class Attendance(commands.Cog):
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
         
-        if user_id in attendance_data[guild_id][role_id][date]:
-            # Remove (mark as absent)
-            del attendance_data[guild_id][role_id][date][user_id]
-            status = "ABSENT"
-            color = 0xe74c3c
-        else:
-            # Add (mark as present)
-            attendance_data[guild_id][role_id][date][user_id] = {
-                "status": "present",
-                "time": now.strftime("%I:%M %p") + " (Manual)",
-                "username": user.name
-            }
-            status = "PRESENT"
-            color = 0x2ecc71
+        current_status, _ = get_user_day_status(attendance_data[guild_id][role_id][date], user_id)
+        next_status = "absent" if current_status == "present" else "present"
+        attendance_data[guild_id][role_id][date][user_id] = {
+            "status": next_status,
+            "time": now.strftime("%I:%M %p") + " (Manual)",
+            "username": user.name
+        }
+        status = next_status.upper()
+        color = 0x2ecc71 if next_status == "present" else 0xe74c3c
         
         save_json(ATTENDANCE_FILE, attendance_data)
         
@@ -836,9 +871,10 @@ class Attendance(commands.Cog):
         
         for date, records in sorted(user_attendance.items(), reverse=True)[:30]:  # Last 30 days
             total_days += 1
-            if user_id in records:
+            status_value, time_marked = get_user_day_status(records, user_id)
+            if status_value == "present":
                 present_count += 1
-                recent_records.append(f"✅ {date} - {records[user_id].get('time', 'N/A')}")
+                recent_records.append(f"✅ {date} - {time_marked or 'N/A'}")
             else:
                 recent_records.append(f"❌ {date} - Absent")
         
@@ -901,8 +937,9 @@ class Attendance(commands.Cog):
             
             for member in batch_role.members:
                 user_id = str(member.id)
-                if user_id in batch_data:
-                    present_list.append(f"{member.name} ({batch_data[user_id].get('time', 'N/A')})")
+                status_value, time_marked = get_user_day_status(batch_data, user_id)
+                if status_value == "present":
+                    present_list.append(f"{member.name} ({time_marked or 'N/A'})")
                 else:
                     absent_list.append(member.name)
             
@@ -975,8 +1012,11 @@ class Attendance(commands.Cog):
             }
             color = 0x2ecc71
         elif status.lower() == "absent":
-            if user_id in attendance_data[guild_id][user_batch_role_id][date]:
-                del attendance_data[guild_id][user_batch_role_id][date][user_id]
+            attendance_data[guild_id][user_batch_role_id][date][user_id] = {
+                "status": "absent",
+                "time": now.strftime("%I:%M %p") + " (Manual)",
+                "username": user.name
+            }
             color = 0xe74c3c
         else:
             embed = discord.Embed(

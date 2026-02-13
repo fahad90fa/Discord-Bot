@@ -32,6 +32,80 @@ class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def _format_id_list(self, ids, label):
+        if not ids:
+            return f"⚠️ No {label} configured."
+        return "\n".join(f"• <@{user_id}> (`{user_id}`)" for user_id in ids)
+
+    @commands.group(name="list", invoke_without_command=True)
+    @is_owner_check()
+    async def list_group(self, ctx):
+        """List bot permission groups"""
+        await ctx.send("Usage: `list owners`, `list admins`, `list mod`")
+
+    @list_group.command(name="owners", aliases=["owner"])
+    @is_owner_check()
+    async def list_owners(self, ctx):
+        data = load_data()
+        embed = discord.Embed(title="👑 BOT OWNERS", color=0xf1c40f)
+        embed.description = self._format_id_list(data.get("owners", []), "owners")
+        await ctx.send(embed=embed)
+
+    @list_group.command(name="admins", aliases=["admin"])
+    @is_owner_check()
+    async def list_admins(self, ctx):
+        data = load_data()
+        embed = discord.Embed(title="🛡️ BOT ADMINS", color=0x3498db)
+        embed.description = self._format_id_list(data.get("admins", []), "admins")
+        await ctx.send(embed=embed)
+
+    @list_group.command(name="mod", aliases=["mods", "moderators"])
+    @is_owner_check()
+    async def list_mods(self, ctx):
+        data = load_data()
+        embed = discord.Embed(title="⚔️ BOT MODS", color=0x2ecc71)
+        embed.description = self._format_id_list(data.get("mods", []), "mods")
+        await ctx.send(embed=embed)
+
+    @commands.group(name="automod", invoke_without_command=True)
+    @is_owner_check()
+    async def automod_group(self, ctx):
+        """Auto-mod overview commands"""
+        await ctx.send("Usage: `automod list`")
+
+    @automod_group.command(name="list", aliases=["status"])
+    @is_owner_check()
+    async def automod_list(self, ctx):
+        config = get_automod_config(ctx.guild.id)
+        anti_caps = config.get("anticaps", {})
+        anti_emoji = config.get("antiemoji", {})
+        bypass_role_id = config.get("bypass_role")
+        bypass_role = f"<@&{bypass_role_id}>" if bypass_role_id else "Not set"
+
+        embed = discord.Embed(title="🛡️ AUTOMOD STATUS", color=0x2b2d31)
+        embed.add_field(
+            name="ANTI-CAPS",
+            value=(
+                f"Enabled: `{anti_caps.get('enabled', False)}`\n"
+                f"Punishment: `{anti_caps.get('punishment', 'mute')}`\n"
+                f"Duration: `{anti_caps.get('duration', 10)} mins`\n"
+                f"Ratio: `{int(anti_caps.get('ratio', 0.5) * 100)}%`\n"
+                f"Min Length: `{anti_caps.get('min_len', 5)}`"
+            ),
+            inline=False,
+        )
+        embed.add_field(
+            name="ANTI-EMOJI",
+            value=(
+                f"Enabled: `{anti_emoji.get('enabled', False)}`\n"
+                f"Punishment: `{anti_emoji.get('punishment', 'mute')}`\n"
+                f"Limit: `{anti_emoji.get('limit', 5)}`"
+            ),
+            inline=False,
+        )
+        embed.add_field(name="BYPASS ROLE", value=bypass_role, inline=False)
+        await ctx.send(embed=embed)
+
     @commands.command()
     @is_owner_check()
     async def addowner(self, ctx, user: discord.User):
