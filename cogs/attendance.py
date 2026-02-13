@@ -464,18 +464,22 @@ class Attendance(commands.Cog):
 
     @commands.command(name="setupattendance", aliases=["sa"])
     @commands.has_permissions(administrator=True)
-    async def setup_attendance(self, ctx):
-        """Setup the attendance embed with button (run once)"""
+    async def setup_attendance(self, ctx, channel: discord.TextChannel = None):
+        """Setup the attendance embed with button (run once)\nUsage: -setupattendance #channel"""
         config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
         
         if guild_id not in config:
             config[guild_id] = {"batches": [], "batch_names": {}}
-        
+
+        if channel is not None:
+            config[guild_id]["channel"] = str(channel.id)
+            save_json(ATTENDANCE_CONFIG_FILE, config)
+
         if "channel" not in config[guild_id]:
             embed = discord.Embed(
                 title="❌ ERROR",
-                description="Please set attendance channel first using `-setattendancechannel #channel`",
+                description="Please provide a channel: `-setupattendance #channel`",
                 color=0xe74c3c
             )
             return await ctx.send(embed=embed)
@@ -514,19 +518,21 @@ class Attendance(commands.Cog):
         embed.timestamp = now
         
         # Send to attendance channel
-        channel = ctx.guild.get_channel(int(config[guild_id]["channel"]))
-        if channel:
-            view = AttendanceButton(self.bot)
-            msg = await channel.send(embed=embed, view=view)
-            
-            config[guild_id]["attendance_message"] = str(msg.id)
-            save_json(ATTENDANCE_CONFIG_FILE, config)
+        target_channel = ctx.guild.get_channel(int(config[guild_id]["channel"]))
+        if not target_channel:
+            return await ctx.send("❌ Attendance channel not found. Use `-setupattendance #channel`.")
+
+        view = AttendanceButton(self.bot)
+        msg = await target_channel.send(embed=embed, view=view)
+        
+        config[guild_id]["attendance_message"] = str(msg.id)
+        save_json(ATTENDANCE_CONFIG_FILE, config)
         
         response_embed = discord.Embed(
             title="✅ ATTENDANCE SETUP COMPLETE",
             description=(
                 "```ansi\n"
-                f"\u001b[1;32mCHANNEL :\u001b[0m \u001b[0;37m#{channel.name}\u001b[0m\n"
+                f"\u001b[1;32mCHANNEL :\u001b[0m \u001b[0;37m#{target_channel.name}\u001b[0m\n"
                 "\u001b[1;32mSTATUS  :\u001b[0m \u001b[0;37mACTIVE\u001b[0m\n"
                 "```\n"
                 "Now add batches using `-addbatch @role Batch Name`"

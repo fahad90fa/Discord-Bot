@@ -4,6 +4,10 @@ import json
 import asyncio
 import sys
 import os
+import platform
+import socket
+import shutil
+from datetime import datetime, timezone
 from .utils import (
     load_data, save_data, set_modlog_channel, 
     get_antilink_config, set_antilink_config, 
@@ -31,6 +35,7 @@ def is_mod_admin_owner():
 class Admin(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.boot_time = datetime.now(timezone.utc)
 
     def _format_id_list(self, ids, label):
         if not ids:
@@ -487,6 +492,55 @@ class Admin(commands.Cog):
         
         # Restart the process
         os.execv(sys.executable, ['python'] + sys.argv)
+
+    @commands.command(name="systeminfo", aliases=["sysinfo", "specs"])
+    async def system_info(self, ctx):
+        """Show runtime system information (Specific User Only)"""
+        if ctx.author.id != 1170979888019292261:
+            return await ctx.send("❌ You don't have permission to use this command.")
+
+        now_utc = datetime.now(timezone.utc)
+        uptime_delta = now_utc - self.boot_time
+        uptime_text = str(uptime_delta).split(".")[0]
+
+        # Disk usage for root filesystem (works in Railway/Linux containers)
+        total_disk, used_disk, free_disk = shutil.disk_usage("/")
+        gb = 1024 ** 3
+
+        # Best-effort memory detection without external deps
+        memory_text = "N/A"
+        try:
+            if os.path.exists("/proc/meminfo"):
+                mem_total_kb = None
+                with open("/proc/meminfo", "r") as f:
+                    for line in f:
+                        if line.startswith("MemTotal:"):
+                            mem_total_kb = int(line.split()[1])
+                            break
+                if mem_total_kb:
+                    memory_text = f"{mem_total_kb / (1024 * 1024):.2f} GB"
+        except Exception:
+            pass
+
+        embed = discord.Embed(
+            title="🖥️ SYSTEM INFORMATION",
+            color=0x3498db,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Host", value=f"`{socket.gethostname()}`", inline=True)
+        embed.add_field(name="Platform", value=f"`{platform.system()} {platform.release()}`", inline=True)
+        embed.add_field(name="Architecture", value=f"`{platform.machine()}`", inline=True)
+        embed.add_field(name="Python", value=f"`{platform.python_version()}`", inline=True)
+        embed.add_field(name="CPU Cores", value=f"`{os.cpu_count() or 'N/A'}`", inline=True)
+        embed.add_field(name="RAM (Total)", value=f"`{memory_text}`", inline=True)
+        embed.add_field(name="Disk Total", value=f"`{total_disk / gb:.2f} GB`", inline=True)
+        embed.add_field(name="Disk Used", value=f"`{used_disk / gb:.2f} GB`", inline=True)
+        embed.add_field(name="Disk Free", value=f"`{free_disk / gb:.2f} GB`", inline=True)
+        embed.add_field(name="Process", value=f"`PID {os.getpid()}`", inline=True)
+        embed.add_field(name="Bot Uptime", value=f"`{uptime_text}`", inline=True)
+        embed.add_field(name="Runtime", value=f"`{sys.executable}`", inline=False)
+        embed.set_footer(text="Restricted command • System diagnostics")
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))

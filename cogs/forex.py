@@ -355,7 +355,8 @@ class ForexNews(commands.Cog):
                     changed = True
 
             # Case 3: 30-minute Reminder (Only for High/Medium and Today's events only)
-            elif 30 >= time_diff > 28:
+            # Use a wider window so loop timing jitter does not skip reminders.
+            elif 30 >= time_diff > 2:
                 # Check if event is today (PKT)
                 now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
                 event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
@@ -367,9 +368,6 @@ class ForexNews(commands.Cog):
                     event_record["reminder_sent"] = True
                     sent_news_dict[event_id] = event_record
                     changed = True
-
-        if changed:
-            save_sent_news(sent_news_dict)
 
         if changed:
             save_sent_news(sent_news_dict)

@@ -76,7 +76,7 @@ class HelpDropdown(discord.ui.Select):
                 "\u001b[0;37mButton: Mark Attendance (One mark per day)\u001b[0m\n"
                 "```"
             )
-            embed.add_field(name="⚙️ [SETUP]", value="```ansi\n\u001b[0;37m-setattendancechannel #channel\n-setattendancelog #channel\n-addbatch @role BatchName\n-setupattendance\u001b[0m\n```", inline=False)
+            embed.add_field(name="⚙️ [SETUP]", value="```ansi\n\u001b[0;37m-setupattendance #channel\n-setattendancelog #channel\n-addbatch @role BatchName\u001b[0m\n```", inline=False)
             embed.add_field(name="📊 [VIEW]", value="```ansi\n\u001b[0;37m-listbatches\n-attendancefordate DD/MM/YY\n-showuserattendance @user\u001b[0m\n```", inline=False)
             embed.add_field(name="📝 [EDIT]", value="```ansi\n\u001b[0;37m-edituserattendance @user DD/MM/YY present/absent\n-editattendancefordate DD/MM/YY\n-removebatch BatchName\u001b[0m\n```", inline=False)
             embed.add_field(name="ℹ️ [INFO]", value="```ansi\n\u001b[0;33mAuto list posts at 9PM daily\nWeekends disabled\nLogs sent to log channel\u001b[0m\n```", inline=False)
