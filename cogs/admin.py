@@ -546,57 +546,79 @@ class Admin(commands.Cog):
 
     @commands.command(name="internetspeed", aliases=["speedtest", "netspeed"])
     async def internet_speed(self, ctx):
-        """Check internet latency and download/upload speed (Specific User Only)"""
+        """Check near-maximum internet download/upload speed (Specific User Only)"""
         if ctx.author.id != 1170979888019292261:
             return await ctx.send("❌ You don't have permission to use this command.")
 
-        load_msg = await ctx.send("🌐 `RUNNING NETWORK SPEED CHECK...`")
+        load_msg = await ctx.send("🌐 `RUNNING MAX THROUGHPUT NETWORK TEST...`")
 
         latency_url = "https://www.google.com/generate_204"
-        download_url = "https://speed.hetzner.de/10MB.bin"
+        download_url = "https://speed.hetzner.de/100MB.bin"
         upload_url = "https://httpbin.org/post"
-        timeout = aiohttp.ClientTimeout(total=25)
+        timeout = aiohttp.ClientTimeout(total=90)
 
         async def run_speed_test(session: aiohttp.ClientSession):
             latencies = []
-            bytes_download = 0
-            bytes_upload = 0
+            total_download_bytes = 0
+            total_upload_bytes = 0
 
             # Latency test (3 probes)
             for _ in range(3):
                 start = time.perf_counter()
                 async with session.get(latency_url) as resp:
+                    if resp.status >= 400:
+                        raise RuntimeError(f"Latency probe failed ({resp.status})")
                     await resp.read()
                 end = time.perf_counter()
                 latencies.append((end - start) * 1000)
 
-            # Download test (read up to 5 MB for quick estimate)
-            max_bytes = 5 * 1024 * 1024
+            async def download_worker(worker_id: int, target_bytes: int):
+                downloaded = 0
+                worker_url = f"{download_url}?worker={worker_id}&t={int(time.time() * 1000)}"
+                async with session.get(worker_url) as resp:
+                    if resp.status >= 400:
+                        raise RuntimeError(f"Download worker failed ({resp.status})")
+                    async for chunk in resp.content.iter_chunked(256 * 1024):
+                        if not chunk:
+                            break
+                        downloaded += len(chunk)
+                        if downloaded >= target_bytes:
+                            break
+                return downloaded
+
+            async def upload_worker(worker_id: int, payload: bytes):
+                worker_url = f"{upload_url}?worker={worker_id}&t={int(time.time() * 1000)}"
+                async with session.post(worker_url, data=payload) as resp:
+                    if resp.status >= 400:
+                        raise RuntimeError(f"Upload worker failed ({resp.status})")
+                    await resp.read()
+                return len(payload)
+
+            # Download benchmark: 4 concurrent streams, ~32 MB total
+            dl_streams = 4
+            dl_target_each = 8 * 1024 * 1024
             start_dl = time.perf_counter()
-            async with session.get(download_url) as resp:
-                async for chunk in resp.content.iter_chunked(64 * 1024):
-                    if not chunk:
-                        break
-                    bytes_download += len(chunk)
-                    if bytes_download >= max_bytes:
-                        break
+            dl_results = await asyncio.gather(*[
+                download_worker(i, dl_target_each) for i in range(dl_streams)
+            ])
             end_dl = time.perf_counter()
-
+            total_download_bytes = sum(dl_results)
             elapsed_dl = max(end_dl - start_dl, 1e-6)
-            download_mbps = (bytes_download * 8) / (elapsed_dl * 1_000_000)
+            download_mbps = (total_download_bytes * 8) / (elapsed_dl * 1_000_000)
 
-            # Upload test (send 2 MB payload for quick estimate)
-            upload_payload = os.urandom(2 * 1024 * 1024)
-            bytes_upload = len(upload_payload)
+            # Upload benchmark: 3 concurrent streams, 3 MB each (9 MB total)
+            ul_streams = 3
+            ul_payload = os.urandom(3 * 1024 * 1024)
             start_ul = time.perf_counter()
-            async with session.post(upload_url, data=upload_payload) as resp:
-                await resp.read()
+            ul_results = await asyncio.gather(*[
+                upload_worker(i, ul_payload) for i in range(ul_streams)
+            ])
             end_ul = time.perf_counter()
-
+            total_upload_bytes = sum(ul_results)
             elapsed_ul = max(end_ul - start_ul, 1e-6)
-            upload_mbps = (bytes_upload * 8) / (elapsed_ul * 1_000_000)
+            upload_mbps = (total_upload_bytes * 8) / (elapsed_ul * 1_000_000)
 
-            return latencies, bytes_download, download_mbps, bytes_upload, upload_mbps
+            return latencies, total_download_bytes, download_mbps, total_upload_bytes, upload_mbps
 
         latencies_ms = []
         download_mbps = None
@@ -607,12 +629,21 @@ class Admin(commands.Cog):
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = await run_speed_test(session)
+                # Run two rounds and keep the best throughput as "max practical speed"
+                r1 = await run_speed_test(session)
+                await asyncio.sleep(0.5)
+                r2 = await run_speed_test(session)
+                best = r1 if (r1[2] + r1[4]) >= (r2[2] + r2[4]) else r2
+                latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = best
         except aiohttp.ClientConnectorCertificateError:
             try:
                 connector = aiohttp.TCPConnector(ssl=False)
                 async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
-                    latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = await run_speed_test(session)
+                    r1 = await run_speed_test(session)
+                    await asyncio.sleep(0.5)
+                    r2 = await run_speed_test(session)
+                    best = r1 if (r1[2] + r1[4]) >= (r2[2] + r2[4]) else r2
+                    latencies_ms, bytes_download, download_mbps, bytes_upload, upload_mbps = best
                     insecure_fallback_used = True
             except Exception as e:
                 await load_msg.edit(content=f"❌ `SPEED TEST FAILED: {type(e).__name__}`")
@@ -628,7 +659,7 @@ class Admin(commands.Cog):
         upload_mbs = (upload_mbps / 8) if upload_mbps is not None else None
 
         embed = discord.Embed(
-            title="🌐 INTERNET SPEED CHECK",
+            title="🌐 INTERNET MAX SPEED CHECK",
             color=0x3498db,
             timestamp=datetime.utcnow()
         )
@@ -646,10 +677,10 @@ class Admin(commands.Cog):
         )
         embed.add_field(name="Download Sample", value=f"`{bytes_download / (1024 * 1024):.2f} MB`", inline=True)
         embed.add_field(name="Upload Sample", value=f"`{bytes_upload / (1024 * 1024):.2f} MB`", inline=True)
-        embed.add_field(name="Method", value="`HTTP probe + partial download/upload`", inline=False)
+        embed.add_field(name="Method", value="`2 rounds • multi-stream download/upload • best result`", inline=False)
         if insecure_fallback_used:
             embed.add_field(name="TLS Mode", value="`Fallback: cert verification disabled`", inline=False)
-        embed.set_footer(text="Restricted command • Approximate speed test")
+        embed.set_footer(text="Restricted command • Max practical speed from current host")
 
         await load_msg.edit(content=None, embed=embed)
 
