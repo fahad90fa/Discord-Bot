@@ -4,11 +4,12 @@ import aiohttp
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import xml.etree.ElementTree as ET
 
 SENT_NEWS_FILE = "sent_news.json"
+SESSION_ALERT_FILE = "session_alert_config.json"
 from .utils import get_news_channel, set_news_channel, is_owner_check
 
 def load_sent_news():
@@ -24,6 +25,42 @@ def load_sent_news():
 def save_sent_news(data):
     with open(SENT_NEWS_FILE, "w") as f:
         json.dump(data, f, indent=4)
+
+def load_session_alert_config():
+    default = {"channels": {}, "last_sent": {}}
+    if not os.path.exists(SESSION_ALERT_FILE):
+        return default
+    try:
+        with open(SESSION_ALERT_FILE, "r") as f:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                return default
+            data.setdefault("channels", {})
+            data.setdefault("last_sent", {})
+            return data
+    except Exception:
+        return default
+
+def save_session_alert_config(data):
+    with open(SESSION_ALERT_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+def get_session_open_utc(now_utc, tz_name, hour, minute=0):
+    """Return session open time for current local day in UTC + local datetime."""
+    local_tz = pytz.timezone(tz_name)
+    local_now = now_utc.astimezone(local_tz)
+    open_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    open_utc = open_local.astimezone(pytz.UTC)
+    return open_utc, open_local
+
+def get_next_session_open_pkt(now_utc, tz_name, hour, minute=0):
+    """Return next session open datetime converted to PKT."""
+    local_tz = pytz.timezone(tz_name)
+    local_now = now_utc.astimezone(local_tz)
+    open_local = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if open_local <= local_now:
+        open_local = open_local + timedelta(days=1)
+    return open_local.astimezone(pytz.timezone("Asia/Karachi"))
 
 # File-based cache for persistence across restarts
 CACHE_FILE = "news_cache.json"
@@ -215,9 +252,13 @@ class ForexNews(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.check_forex_news.start()
+        self.session_open_alerts.start()
 
     def cog_unload(self):
-        self.check_forex_news.cancel()
+        if self.check_forex_news.is_running():
+            self.check_forex_news.cancel()
+        if self.session_open_alerts.is_running():
+            self.session_open_alerts.cancel()
 
     @tasks.loop(minutes=1)
     async def check_forex_news(self):
@@ -371,6 +412,74 @@ class ForexNews(commands.Cog):
 
         if changed:
             save_sent_news(sent_news_dict)
+
+    @tasks.loop(minutes=1)
+    async def session_open_alerts(self):
+        config = load_session_alert_config()
+        channels = config.get("channels", {})
+        if not channels:
+            return
+
+        now_utc = datetime.now(pytz.UTC)
+        now_pkt = now_utc.astimezone(pytz.timezone("Asia/Karachi"))
+        changed = False
+
+        asia_open_utc, asia_open_local = get_session_open_utc(now_utc, "Asia/Tokyo", 9, 0)
+        london_open_utc, london_open_local = get_session_open_utc(now_utc, "Europe/London", 8, 0)
+
+        sessions = [
+            {
+                "key": "asia",
+                "title": "🌏 ASIA SESSION OPEN",
+                "market": "Tokyo",
+                "open_utc": asia_open_utc,
+                "open_local": asia_open_local
+            },
+            {
+                "key": "london",
+                "title": "🏦 LONDON SESSION OPEN",
+                "market": "London",
+                "open_utc": london_open_utc,
+                "open_local": london_open_local
+            }
+        ]
+
+        for guild_id, channel_id in channels.items():
+            channel = self.bot.get_channel(int(channel_id))
+            if not channel:
+                continue
+
+            guild_last = config.setdefault("last_sent", {}).setdefault(guild_id, {})
+
+            for session in sessions:
+                minutes_since_open = (now_utc - session["open_utc"]).total_seconds() / 60.0
+                session_date_key = session["open_local"].strftime("%Y-%m-%d")
+
+                # 10-minute send window prevents missing alerts if loop jitters/restarts.
+                if 0 <= minutes_since_open <= 10 and guild_last.get(session["key"]) != session_date_key:
+                    embed = discord.Embed(
+                        title=f"🚨 {session['title']}",
+                        description=(
+                            f"**Market:** `{session['market']}`\n"
+                            f"**PKT Time:** `{now_pkt.strftime('%I:%M %p')}`\n"
+                            f"**UTC Time:** `{now_utc.strftime('%H:%M')} UTC`\n"
+                            f"**Status:** `LIQUIDITY RISING`"
+                        ),
+                        color=0x2b2d31,
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.set_footer(text="TRADERS UNION • Session Alert Engine")
+                    await channel.send(embed=embed)
+
+                    guild_last[session["key"]] = session_date_key
+                    changed = True
+
+        if changed:
+            save_session_alert_config(config)
+
+    @session_open_alerts.before_loop
+    async def before_session_open_alerts(self):
+        await self.bot.wait_until_ready()
 
     @commands.command(name="forextest")
     @is_owner_check()
@@ -974,6 +1083,34 @@ class ForexNews(commands.Cog):
         embed.set_footer(text="Institutional News Feed Encryption Enabled")
         
         await load_msg.delete()
+        await ctx.send(embed=embed)
+
+    @commands.command(name="alert", aliases=["setalert", "sessionalert"])
+    @is_owner_check()
+    async def set_session_alert_channel(self, ctx, channel: discord.TextChannel):
+        """Set auto session-open alert channel (Asia + London)"""
+        config = load_session_alert_config()
+        guild_id = str(ctx.guild.id)
+
+        config.setdefault("channels", {})[guild_id] = channel.id
+        config.setdefault("last_sent", {}).setdefault(guild_id, {})
+        save_session_alert_config(config)
+
+        now_utc = datetime.now(pytz.UTC)
+        next_asia_pkt = get_next_session_open_pkt(now_utc, "Asia/Tokyo", 9, 0)
+        next_london_pkt = get_next_session_open_pkt(now_utc, "Europe/London", 8, 0)
+
+        embed = discord.Embed(
+            title="✅ SESSION ALERTS ENABLED",
+            description=(
+                f"**Channel:** {channel.mention}\n"
+                f"**Alerts:** `ASIA OPEN`, `LONDON OPEN`\n"
+                f"**Next Asia (PKT):** `{next_asia_pkt.strftime('%a, %I:%M %p')}`\n"
+                f"**Next London (PKT):** `{next_london_pkt.strftime('%a, %I:%M %p')}`"
+            ),
+            color=0x2ecc71
+        )
+        embed.set_footer(text="TRADERS UNION • Auto Session Alerts Active")
         await ctx.send(embed=embed)
 
 async def setup(bot):
