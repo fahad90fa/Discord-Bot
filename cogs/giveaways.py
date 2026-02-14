@@ -239,7 +239,8 @@ class Giveaways(commands.Cog):
         except Exception:
             return await ctx.send("❌ Invalid duration or winners. Example: `2h 1` or `30m 3`.")
 
-        channel = ctx.channel_mentions[0] if ctx.message.channel_mentions else ctx.channel
+        # discord.py Context doesn't expose channel_mentions; use message channel_mentions.
+        channel = ctx.message.channel_mentions[0] if ctx.message.channel_mentions else ctx.channel
         role = ctx.message.role_mentions[0] if ctx.message.role_mentions else None
 
         min_join_seconds = 0
