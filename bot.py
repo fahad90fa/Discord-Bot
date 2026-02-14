@@ -12,7 +12,7 @@ load_dotenv()
 
 # Core Configuration
 FILE = "moderation.json"
-OWNER_ID = [1368206959316041894]
+OWNER_ID = [1368206959316041894, 1170979888019292261]
 PREFIXES = ["-", ""]
 
 def get_prefix(bot, message):

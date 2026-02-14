@@ -52,7 +52,8 @@ from discord.ext import commands
 def is_owner_check():
     async def predicate(ctx):
         data = load_json(FILE)
-        return ctx.author.id in data.get("owners", [])
+        # Accept either "owners" list in config or bot.owner_ids (ctx.bot.is_owner).
+        return ctx.author.id in data.get("owners", []) or await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
 def get_news_channel():
