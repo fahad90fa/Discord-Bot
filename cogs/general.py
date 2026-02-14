@@ -66,7 +66,7 @@ class HelpDropdown(discord.ui.Select):
             embed.add_field(name="🧮 [LOTSIZE]", value="```ansi\n\u001b[0;37mInstitutional Risk Calc.\u001b[0m\n```", inline=False)
             embed.add_field(name="🔔 [REMINDERS]", value="```ansi\n\u001b[0;37mSubscription alert feed.\u001b[0m\n```", inline=False)
             embed.add_field(name="💎 [XAUUSD]", value="```ansi\n\u001b[0;37mGold market pulse data.\u001b[0m\n```", inline=False)
-            embed.add_field(name="🤖 [ASK / AI]", value="```ansi\n\u001b[0;37mForex AI Expert System.\u001b[0m\n```", inline=False)
+            # AI commands disabled
 
         elif self.values[0] == "Attendance System":
             embed.title = "📋 SECTOR: ATTENDANCE"

@@ -98,6 +98,63 @@ class Admin(commands.Cog):
         embed.set_footer(text="KV SQLite (WAL) • Traders Union Manager")
         await ctx.send(embed=embed)
 
+    @db_group.command(name="check", aliases=["verify"])
+    @is_owner_check()
+    async def db_check(self, ctx):
+        """Verify that all major systems are DB-backed (Owner Only)."""
+        checks = [
+            ("attendance_config.json", {}),
+            ("attendance_data.json", {}),
+            ("news_config.json", {}),
+            ("sent_news.json", {}),
+            ("news_cache.json", {}),
+            ("session_alert_config.json", {}),
+            ("union_points.json", {}),
+            ("union_logs.json", []),
+            ("union_managers.json", []),
+            ("leaderboard_config.json", {}),
+            ("log_channel.json", {}),
+            ("welcome_config.json", {}),
+            ("audit_log_config.json", {}),
+            ("giveaways.json", {"giveaways": []}),
+            ("scheduled_announcements.json", {"items": []}),
+            ("moderation.json", {}),
+            ("modlogs.json", {}),
+            ("ban_limit.json", {}),
+            ("afk.json", {}),
+            ("antilink.json", {}),
+            ("antispam.json", {}),
+            ("automod.json", {}),
+            ("info.json", {}),
+        ]
+
+        ok = 0
+        bad = []
+        for key, default in checks:
+            try:
+                val = db.get_json(key, default, migrate_file=key)
+                if not isinstance(val, type(default)):
+                    bad.append(f"{key} (type)")
+                else:
+                    ok += 1
+            except Exception:
+                bad.append(f"{key} (error)")
+
+        embed = discord.Embed(
+            title="DATABASE VERIFY",
+            color=0x2ecc71 if not bad else 0xe74c3c
+        )
+        embed.add_field(name="OK", value=f"`{ok}/{len(checks)}`", inline=True)
+        embed.add_field(name="Bad", value=f"`{len(bad)}`", inline=True)
+        if bad:
+            # Keep it short to avoid embed limits.
+            preview = "\n".join(f"- {x}" for x in bad[:15])
+            if len(bad) > 15:
+                preview += f"\n- ... +{len(bad) - 15} more"
+            embed.add_field(name="Details", value=preview, inline=False)
+        embed.set_footer(text="Reads from DB; auto-migrates from old JSON files if needed")
+        await ctx.send(embed=embed)
+
     @commands.group(name="automod", invoke_without_command=True)
     @is_owner_check()
     async def automod_group(self, ctx):

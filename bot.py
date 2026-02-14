@@ -59,7 +59,6 @@ async def setup_hook():
         "cogs.events",
         "cogs.general",
         "cogs.union_points",
-        "cogs.forex_ai",
         "cogs.attendance"
     ]
     
