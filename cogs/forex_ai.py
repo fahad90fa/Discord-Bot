@@ -1,14 +1,12 @@
 import discord
 from discord.ext import commands
 import aiohttp
-import json
-import os
-from dotenv import load_dotenv
+import db
 
-load_dotenv()
-
-# Gemini API Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Groq (OpenAI-compatible) API Configuration
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_DB_KEY = "secrets.groq_api_key"
+GROQ_MODEL = "llama-3.1-8b-instant"
 
 # Forex trading related keywords
 FOREX_KEYWORDS = [
@@ -31,14 +29,21 @@ class ForexAI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    def _get_groq_key(self) -> str | None:
+        try:
+            return db.get_raw(GROQ_DB_KEY)
+        except Exception:
+            return None
+
     async def ask_ai(self, question: str) -> str:
-        """Send question to Gemini API and get response"""
-        if not GEMINI_API_KEY:
-            return "❌ API key not configured. Please contact the bot owner."
-        
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        """Send question to Groq API and get response"""
+        api_key = self._get_groq_key()
+        if not api_key:
+            return "❌ AI key not configured. Owner: use `-aikey set <key>`."
+
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
         }
         
         # System prompt to keep AI focused on forex
@@ -50,31 +55,66 @@ Use professional trading terminology and provide actionable insights when releva
 Always include risk disclaimers when discussing trading strategies."""
         
         data = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": f"{system_prompt}\n\nUser question: {question}"}
-                    ]
-                }
+            "model": GROQ_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
             ],
-            "generationConfig": {
-                "maxOutputTokens": 500
-            }
+            "temperature": 0.4,
+            "max_tokens": 500,
         }
         
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data) as response:
+                async with session.post(GROQ_API_URL, headers=headers, json=data) as response:
                     if response.status == 200:
                         result = await response.json()
-                        return result["candidates"][0]["content"]["parts"][0]["text"]
+                        return result["choices"][0]["message"]["content"]
                     else:
                         error_text = await response.text()
-                        print(f"Gemini API Error: {response.status} - {error_text}")
+                        print(f"Groq API Error: {response.status} - {error_text}")
                         return "❌ Failed to get response from AI. Please try again later."
         except Exception as e:
-            print(f"Error calling Gemini API: {e}")
+            print(f"Error calling Groq API: {e}")
             return "❌ An error occurred while processing your request."
+
+    @commands.group(name="aikey", invoke_without_command=True)
+    async def aikey_group(self, ctx):
+        """Configure AI provider keys (Owner Only)"""
+        await ctx.send("Use: `-aikey set <groq_key>` | `-aikey status` | `-aikey clear`")
+
+    @aikey_group.command(name="set")
+    @commands.is_owner()
+    async def aikey_set(self, ctx, *, key: str):
+        """Store Groq API key in DB (Owner Only)"""
+        if not key or len(key) < 20:
+            return await ctx.send("❌ Invalid key.")
+        db.set_raw(GROQ_DB_KEY, key.strip())
+        embed = discord.Embed(
+            title="✅ AI KEY SAVED",
+            description="Groq API key saved in database.",
+            color=0x2ecc71
+        )
+        await ctx.send(embed=embed)
+
+    @aikey_group.command(name="status", aliases=["check"])
+    @commands.is_owner()
+    async def aikey_status(self, ctx):
+        """Show if AI key is configured (Owner Only)"""
+        ok = bool(self._get_groq_key())
+        embed = discord.Embed(
+            title="🧠 AI KEY STATUS",
+            description="`CONFIGURED`" if ok else "`NOT SET`",
+            color=0x2ecc71 if ok else 0xe74c3c
+        )
+        await ctx.send(embed=embed)
+
+    @aikey_group.command(name="clear", aliases=["remove", "reset"])
+    @commands.is_owner()
+    async def aikey_clear(self, ctx):
+        """Remove Groq API key from DB (Owner Only)"""
+        db.delete_key(GROQ_DB_KEY)
+        await ctx.send("✅ AI key cleared.")
 
     @commands.command(name="ask", aliases=["ai", "forex"])
     async def ask_forex(self, ctx, *, question: str):

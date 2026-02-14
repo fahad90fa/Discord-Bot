@@ -64,17 +64,30 @@ class AuditLog(commands.Cog):
         ch_id = cfg.get(str(guild.id))
         if not ch_id:
             return None
-        return guild.get_channel(int(ch_id))
+        try:
+            ch_id_int = int(ch_id)
+        except (TypeError, ValueError):
+            return None
+
+        # bot cache resolves threads too; prefer it.
+        ch = self.bot.get_channel(ch_id_int)
+        if ch and getattr(ch, "guild", None) and ch.guild.id == guild.id:
+            return ch
+        return guild.get_channel(ch_id_int)
 
     async def _send(self, guild: discord.Guild, embed: discord.Embed, *, content: str | None = None):
         ch = self._get_log_channel(guild)
         if not ch:
             return
-        await ch.send(
-            content=content,
-            embed=embed,
-            allowed_mentions=discord.AllowedMentions.none()
-        )
+        try:
+            await ch.send(
+                content=content,
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+        except Exception:
+            # Missing perms / deleted channel / rate limits should not break listeners.
+            return
 
     @commands.command(name="setauditlog", aliases=["auditset", "auditlogset"])
     @commands.has_permissions(administrator=True)
@@ -156,7 +169,7 @@ class AuditLog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent):
-        # When message isn't cached, at least log minimal info if we have snapshot.
+        # Always log deletes; include cached content if available.
         if not payload.guild_id:
             return
         guild = self.bot.get_guild(payload.guild_id)
@@ -165,25 +178,161 @@ class AuditLog(commands.Cog):
 
         key = f"{payload.channel_id}:{payload.message_id}"
         snap = self._cache.get(key)
-        if not snap:
+        # Avoid duplicates: if we have a snapshot, on_message_delete likely logged already.
+        if snap:
             return
 
-        channel = guild.get_channel(int(snap["channel_id"]))
+        channel = guild.get_channel(payload.channel_id)
         embed = discord.Embed(
-            title="🗑️ Message Deleted (Cached)",
+            title="🗑️ Message Deleted",
             color=0xe74c3c,
             timestamp=datetime.utcnow()
         )
-        embed.add_field(name="User", value=f"`{snap.get('author_tag')}` (`{snap.get('author_id')}`)", inline=False)
-        embed.add_field(name="Channel", value=channel.mention if channel else f"`{snap.get('channel_id')}`", inline=True)
+        embed.add_field(name="Channel", value=channel.mention if channel else f"`{payload.channel_id}`", inline=True)
         embed.add_field(name="Message ID", value=f"`{payload.message_id}`", inline=True)
-        embed.add_field(name="Content", value=_truncate(snap.get("content")) or "`(empty)`", inline=False)
+        embed.add_field(name="Content", value="`(not cached)`", inline=False)
+        await self._send(guild, embed)
 
-        atts = snap.get("attachments") or []
-        if atts:
-            att_txt = "\n".join(f"- {a.get('filename')}: {a.get('url')}" for a in atts)
-            embed.add_field(name="Attachments", value=_truncate(att_txt, 900), inline=False)
+    @commands.Cog.listener()
+    async def on_raw_bulk_message_delete(self, payload: discord.RawBulkMessageDeleteEvent):
+        if not payload.guild_id:
+            return
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
 
+        channel = guild.get_channel(payload.channel_id)
+        ids = list(payload.message_ids or [])
+
+        embed = discord.Embed(
+            title="🧹 Bulk Messages Deleted",
+            color=0xe67e22,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Channel", value=channel.mention if channel else f"`{payload.channel_id}`", inline=True)
+        embed.add_field(name="Count", value=f"`{len(ids)}`", inline=True)
+
+        # Include a small sample of cached messages (if available).
+        samples = []
+        for mid in ids[:25]:
+            snap = self._cache.get(f"{payload.channel_id}:{mid}")
+            if not snap:
+                continue
+            samples.append(f"- `{snap.get('author_tag')}`: {_truncate(snap.get('content'), 120) or '(empty)'}")
+            if len(samples) >= 5:
+                break
+        if samples:
+            embed.add_field(name="Cached Samples", value="\n".join(samples)[:950], inline=False)
+
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_raw_message_edit(self, payload: discord.RawMessageUpdateEvent):
+        if not payload.guild_id:
+            return
+        guild = self.bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+
+        data = payload.data or {}
+        # Only log if content is present in the update payload.
+        if "content" not in data and "attachments" not in data:
+            return
+
+        channel = guild.get_channel(payload.channel_id)
+        key = f"{payload.channel_id}:{payload.message_id}"
+        before_snap = self._cache.get(key)
+
+        after_content = data.get("content", "")
+        embed = discord.Embed(
+            title="✏️ Message Edited (Raw)",
+            color=0xf1c40f,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Channel", value=channel.mention if channel else f"`{payload.channel_id}`", inline=True)
+        embed.add_field(name="Message ID", value=f"`{payload.message_id}`", inline=True)
+        if before_snap:
+            embed.add_field(name="Before", value=_truncate(before_snap.get("content")) or "`(empty)`", inline=False)
+        else:
+            embed.add_field(name="Before", value="`(not cached)`", inline=False)
+        embed.add_field(name="After", value=_truncate(after_content) or "`(empty)`", inline=False)
+
+        await self._send(guild, embed)
+
+        # Update cache with the latest view we have.
+        try:
+            author = data.get("author") or {}
+            self._cache[key] = {
+                "guild_id": payload.guild_id,
+                "channel_id": payload.channel_id,
+                "author_id": int(author.get("id")) if author.get("id") else (before_snap.get("author_id") if before_snap else 0),
+                "author_tag": f"{author.get('username','Unknown')}#{author.get('discriminator','0000')}" if author.get("username") else (before_snap.get("author_tag") if before_snap else "Unknown"),
+                "content": after_content or "",
+                "attachments": before_snap.get("attachments") if before_snap else [],
+                "created_at": before_snap.get("created_at") if before_snap else None,
+            }
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._cache_max:
+                self._cache.popitem(last=False)
+        except Exception:
+            pass
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        guild = member.guild
+        embed = discord.Embed(title="➕ Member Joined", color=0x2ecc71, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"{member.mention} (`{member.id}`)", inline=False)
+        embed.add_field(name="Created", value=f"`{member.created_at.isoformat() if member.created_at else 'N/A'}`", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        guild = member.guild
+        embed = discord.Embed(title="➖ Member Left", color=0xe74c3c, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"`{member}` (`{member.id}`)", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
+        embed = discord.Embed(title="🔨 Member Banned", color=0xe74c3c, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"`{user}` (`{user.id}`)", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_member_unban(self, guild: discord.Guild, user: discord.User):
+        embed = discord.Embed(title="♻️ Member Unbanned", color=0x2ecc71, timestamp=datetime.utcnow())
+        embed.add_field(name="User", value=f"`{user}` (`{user.id}`)", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_create(self, role: discord.Role):
+        guild = role.guild
+        embed = discord.Embed(title="🧩 Role Created", color=0x2ecc71, timestamp=datetime.utcnow())
+        embed.add_field(name="Role", value=f"{role.mention} (`{role.id}`)", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_delete(self, role: discord.Role):
+        guild = role.guild
+        embed = discord.Embed(title="🧨 Role Deleted", color=0xe74c3c, timestamp=datetime.utcnow())
+        embed.add_field(name="Role", value=f"`{role.name}` (`{role.id}`)", inline=False)
+        await self._send(guild, embed)
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        guild = after.guild
+        changes = []
+        if before.name != after.name:
+            changes.append(f"Name: `{before.name}` -> `{after.name}`")
+        if before.color != after.color:
+            changes.append(f"Color: `{before.color}` -> `{after.color}`")
+        if before.permissions != after.permissions:
+            changes.append("Permissions: `changed`")
+        if not changes:
+            return
+        embed = discord.Embed(title="🛠️ Role Updated", color=0xf39c12, timestamp=datetime.utcnow())
+        embed.add_field(name="Role", value=f"{after.mention} (`{after.id}`)", inline=False)
+        embed.add_field(name="Changes", value="\n".join(changes)[:950], inline=False)
         await self._send(guild, embed)
 
     @commands.Cog.listener()
