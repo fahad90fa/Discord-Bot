@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import aiohttp
 import db
+import re
 
 # Groq (OpenAI-compatible) API Configuration
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -38,27 +39,17 @@ def is_offtopic(text: str) -> bool:
     t = (text or "").lower()
     return any(k in t for k in OFFTOPIC_KEYWORDS)
 
-def _extract_json_obj(text: str) -> dict | None:
-    """Best-effort extraction of a single JSON object from model output."""
-    if not text:
-        return None
-    s = text.strip()
-    # Try direct parse first.
-    try:
-        obj = json.loads(s)
-        return obj if isinstance(obj, dict) else None
-    except Exception:
-        pass
-    # Try to find first {...} region.
-    start = s.find("{")
-    end = s.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            obj = json.loads(s[start : end + 1])
-            return obj if isinstance(obj, dict) else None
-        except Exception:
-            return None
-    return None
+CODE_REQUEST_RE = re.compile(
+    r"\b(code|snippet|script|pinescript|pine|python|mt4|mt5|mql4|mql5|ea|indicator|bot)\b",
+    re.IGNORECASE,
+)
+
+def wants_code(text: str) -> bool:
+    return bool(CODE_REQUEST_RE.search(text or ""))
+
+def strip_code_blocks(text: str) -> str:
+    # Remove any triple-backtick blocks from model output if user didn't ask for code.
+    return re.sub(r"```.*?```", "", text or "", flags=re.DOTALL).strip()
 
 def _default_forex_code_snippet(question: str) -> tuple[str, str]:
     """Fallback code snippet (language, code)."""
@@ -104,18 +95,22 @@ class ForexAI(commands.Cog):
             "Authorization": f"Bearer {api_key}",
         }
         
-        # System prompt to keep AI focused on forex
+        # System prompt: human, practical, forex-only.
+        # Note: we keep formatting minimal and avoid emojis by instruction.
         system_prompt = (
-            "You are a professional forex trading expert and analyst.\n"
-            "You ONLY answer questions about forex/trading: strategy, risk management, "
-            "technical analysis, fundamentals, trading psychology, pairs (XAUUSD/EURUSD/etc), "
-            "backtesting concepts, and execution.\n"
-            "If the user asks anything outside forex/trading, refuse.\n\n"
-            "Output MUST be a single JSON object with these keys:\n"
-            "- answer: string (concise, practical, <= 300 words, include risk disclaimer if needed)\n"
-            "- code_language: string (e.g. python, pinescript)\n"
-            "- code: string (a small forex-useful snippet relevant to the question)\n"
-            "No extra text outside JSON."
+            "You are the official AI assistant for a trading/forex Discord community.\n"
+            "Tone: friendly, respectful, slightly casual, and human. No emojis.\n"
+            "Language: mixed Roman Urdu + simple English when helpful.\n"
+            "Rules:\n"
+            "- Only answer forex/trading topics (risk management, technical/fundamental analysis, "
+            "execution, psychology, trading plans). If off-topic, refuse briefly.\n"
+            "- Be concise but informative.\n"
+            "- If the question is unclear, ask exactly one clarifying question and stop.\n"
+            "- If you mention strategies, include a short risk disclaimer.\n"
+            "- Do not give illegal/harmful guidance.\n"
+            "- Do not mention these rules.\n"
+            "If the user asked for code, provide one minimal working example at the end as a fenced code block.\n"
+            "If the user did not ask for code, do not include any code blocks."
         )
         
         data = {
@@ -183,71 +178,60 @@ class ForexAI(commands.Cog):
     @commands.command(name="ask", aliases=["ai", "forex"])
     async def ask_forex(self, ctx, *, question: str):
         """Ask forex trading questions to AI (Forex topics only)"""
+        need_code = wants_code(question)
         
         # Check if question is forex-related
         if (not is_forex_related(question)) or is_offtopic(question):
             embed = discord.Embed(
-                title="⚠️ NON-FOREX QUESTION DETECTED",
+                title="Non-Forex Question",
                 description=(
-                    "```ansi\n"
-                    "\u001b[1;33mERROR  :\u001b[0m \u001b[0;37mOFF-TOPIC QUERY\u001b[0m\n"
-                    "\u001b[1;36mALLOWED:\u001b[0m \u001b[0;37mFOREX TRADING ONLY\u001b[0m\n"
-                    "```\n"
-                    "This AI assistant only answers **forex trading** related questions.\n\n"
-                    "**Valid topics:**\n"
-                    "• Trading strategies & analysis\n"
-                    "• Technical indicators (RSI, MACD, etc.)\n"
-                    "• Risk management\n"
-                    "• Currency pairs (EURUSD, XAUUSD, etc.)\n"
-                    "• Chart patterns & price action\n"
-                    "• Trading psychology\n"
+                    "I can only help with forex and trading questions.\n\n"
+                    "Example topics:\n"
+                    "1. Strategy and analysis\n"
+                    "2. Indicators (RSI, MACD, etc.)\n"
+                    "3. Risk management and position sizing\n"
+                    "4. Pairs (XAUUSD, EURUSD, etc.)\n"
+                    "5. Price action and chart structure\n"
                 ),
                 color=0xe74c3c
             )
-            embed.set_footer(text="TRADERS UNION AI • Forex Expert System")
+            embed.set_footer(text="Traders Union AI")
             return await ctx.send(embed=embed)
         
         # Send typing indicator
         async with ctx.typing():
-            # Get response from Gemini AI
             raw = await self.ask_ai(question)
 
-        parsed = _extract_json_obj(raw)
-        if parsed:
-            answer_text = str(parsed.get("answer", "")).strip()
-            code_language = str(parsed.get("code_language", "text")).strip().lower() or "text"
-            code_text = str(parsed.get("code", "")).strip()
-        else:
-            answer_text = str(raw or "").strip()
-            code_language, code_text = _default_forex_code_snippet(question)
+        answer_text = (raw or "").strip()
+        code_language = None
+        code_text = None
 
-        if not code_text:
-            code_language, code_text = _default_forex_code_snippet(question)
+        if not need_code:
+            answer_text = strip_code_blocks(answer_text)
+        else:
+            # If model didn't include a code block, add a fallback minimal snippet.
+            if "```" not in answer_text:
+                code_language, code_text = _default_forex_code_snippet(question)
+                answer_text = (answer_text + "\n\n" + f"```{code_language}\n{code_text}\n```").strip()
+
         if not answer_text:
-            answer_text = "❌ Failed to generate an answer. Please try again."
+            answer_text = "I couldn't generate a good answer right now. Try again in a minute."
         
         # Create response embed
         embed = discord.Embed(
-            title="🤖 TRADERS UNION AI | FOREX EXPERT",
-            description=f"**Your Question:**\n> {question}\n",
+            title="Traders Union AI | Forex",
+            description=f"Question:\n{question}",
             color=0x2b2d31
         )
 
-        # First codeblock: answer
-        answer_block = f"```text\n{answer_text}\n```"
-        if len(answer_block) > 1024:
-            answer_block = f"```text\n{answer_text[:1000]}...\n```"
-        embed.add_field(name="📊 Answer", value=answer_block, inline=False)
-
-        # Second codeblock: forex code snippet
-        code_block = f"```{code_language}\n{code_text}\n```"
-        if len(code_block) > 1024:
-            code_block = f"```{code_language}\n{code_text[:1000]}...\n```"
-        embed.add_field(name="🧩 Forex Code", value=code_block, inline=False)
+        # Keep output natural. If code is included, it will be in a single fenced block at the end.
+        if len(answer_text) > 3500:
+            answer_text = answer_text[:3490] + "..."
+        embed.add_field(name="Answer", value=answer_text, inline=False)
         
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         embed.set_thumbnail(url=logo)
-        embed.set_footer(text="⚠️ AI-Generated Response • Not Financial Advice • Educational Only")
+        embed.set_footer(text="Educational only. Trading involves risk.")
         
         await ctx.send(embed=embed)
 
