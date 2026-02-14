@@ -25,6 +25,64 @@ def is_forex_related(text: str) -> bool:
     text_lower = text.lower()
     return any(keyword in text_lower for keyword in FOREX_KEYWORDS)
 
+OFFTOPIC_KEYWORDS = [
+    # Common non-forex topics users try to ask.
+    "movie", "song", "lyrics", "anime", "game", "valorant", "pubg", "freefire",
+    "politics", "election", "president", "religion", "dua", "hadith",
+    "school", "assignment", "homework", "math", "chemistry", "physics",
+    "girlfriend", "boyfriend", "relationship",
+    "hack", "crack", "steal", "carding", "ddos",
+]
+
+def is_offtopic(text: str) -> bool:
+    t = (text or "").lower()
+    return any(k in t for k in OFFTOPIC_KEYWORDS)
+
+def _extract_json_obj(text: str) -> dict | None:
+    """Best-effort extraction of a single JSON object from model output."""
+    if not text:
+        return None
+    s = text.strip()
+    # Try direct parse first.
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+    # Try to find first {...} region.
+    start = s.find("{")
+    end = s.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            obj = json.loads(s[start : end + 1])
+            return obj if isinstance(obj, dict) else None
+        except Exception:
+            return None
+    return None
+
+def _default_forex_code_snippet(question: str) -> tuple[str, str]:
+    """Fallback code snippet (language, code)."""
+    q = (question or "").lower()
+    if "rsi" in q or "indicator" in q:
+        return (
+            "pinescript",
+            "//@version=5\nindicator(\"RSI (Simple)\", overlay=false)\nlen = input.int(14, \"Length\")\nsrc = input.source(close, \"Source\")\nr = ta.rsi(src, len)\nplot(r, \"RSI\", color=color.new(color.aqua, 0))\nhline(70, \"Overbought\")\nhline(30, \"Oversold\")\n",
+        )
+    # Generic position size / risk calculator.
+    return (
+        "python",
+        "def position_size(account_balance, risk_pct, stop_loss_pips, pip_value_per_lot):\n"
+        "    \"\"\"Return lots for a trade given risk and stop-loss.\"\"\"\n"
+        "    risk_amount = account_balance * (risk_pct / 100.0)\n"
+        "    if stop_loss_pips <= 0 or pip_value_per_lot <= 0:\n"
+        "        return 0\n"
+        "    lots = risk_amount / (stop_loss_pips * pip_value_per_lot)\n"
+        "    return round(lots, 2)\n\n"
+        "# Example:\n"
+        "# lots = position_size(1000, 1, 25, 10)  # balance, risk%, SL pips, $/pip per 1 lot\n"
+        "# print(lots)\n",
+    )
+
 class ForexAI(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -47,12 +105,18 @@ class ForexAI(commands.Cog):
         }
         
         # System prompt to keep AI focused on forex
-        system_prompt = """You are a professional forex trading expert and analyst. 
-You provide clear, accurate, and educational information about forex trading.
-Keep your responses concise (under 300 words), practical, and focused on forex trading only.
-If asked about non-forex topics, politely decline and redirect to forex topics.
-Use professional trading terminology and provide actionable insights when relevant.
-Always include risk disclaimers when discussing trading strategies."""
+        system_prompt = (
+            "You are a professional forex trading expert and analyst.\n"
+            "You ONLY answer questions about forex/trading: strategy, risk management, "
+            "technical analysis, fundamentals, trading psychology, pairs (XAUUSD/EURUSD/etc), "
+            "backtesting concepts, and execution.\n"
+            "If the user asks anything outside forex/trading, refuse.\n\n"
+            "Output MUST be a single JSON object with these keys:\n"
+            "- answer: string (concise, practical, <= 300 words, include risk disclaimer if needed)\n"
+            "- code_language: string (e.g. python, pinescript)\n"
+            "- code: string (a small forex-useful snippet relevant to the question)\n"
+            "No extra text outside JSON."
+        )
         
         data = {
             "model": GROQ_MODEL,
@@ -121,7 +185,7 @@ Always include risk disclaimers when discussing trading strategies."""
         """Ask forex trading questions to AI (Forex topics only)"""
         
         # Check if question is forex-related
-        if not is_forex_related(question):
+        if (not is_forex_related(question)) or is_offtopic(question):
             embed = discord.Embed(
                 title="⚠️ NON-FOREX QUESTION DETECTED",
                 description=(
@@ -146,7 +210,21 @@ Always include risk disclaimers when discussing trading strategies."""
         # Send typing indicator
         async with ctx.typing():
             # Get response from Gemini AI
-            response = await self.ask_ai(question)
+            raw = await self.ask_ai(question)
+
+        parsed = _extract_json_obj(raw)
+        if parsed:
+            answer_text = str(parsed.get("answer", "")).strip()
+            code_language = str(parsed.get("code_language", "text")).strip().lower() or "text"
+            code_text = str(parsed.get("code", "")).strip()
+        else:
+            answer_text = str(raw or "").strip()
+            code_language, code_text = _default_forex_code_snippet(question)
+
+        if not code_text:
+            code_language, code_text = _default_forex_code_snippet(question)
+        if not answer_text:
+            answer_text = "❌ Failed to generate an answer. Please try again."
         
         # Create response embed
         embed = discord.Embed(
@@ -154,19 +232,18 @@ Always include risk disclaimers when discussing trading strategies."""
             description=f"**Your Question:**\n> {question}\n",
             color=0x2b2d31
         )
-        
-        # Split response if too long for single field
-        if len(response) > 1024:
-            # Split into chunks
-            chunks = [response[i:i+1024] for i in range(0, len(response), 1024)]
-            for i, chunk in enumerate(chunks[:3]):  # Max 3 chunks
-                embed.add_field(
-                    name=f"📊 Response (Part {i+1})" if len(chunks) > 1 else "📊 Response",
-                    value=chunk,
-                    inline=False
-                )
-        else:
-            embed.add_field(name="📊 Response", value=response, inline=False)
+
+        # First codeblock: answer
+        answer_block = f"```text\n{answer_text}\n```"
+        if len(answer_block) > 1024:
+            answer_block = f"```text\n{answer_text[:1000]}...\n```"
+        embed.add_field(name="📊 Answer", value=answer_block, inline=False)
+
+        # Second codeblock: forex code snippet
+        code_block = f"```{code_language}\n{code_text}\n```"
+        if len(code_block) > 1024:
+            code_block = f"```{code_language}\n{code_text[:1000]}...\n```"
+        embed.add_field(name="🧩 Forex Code", value=code_block, inline=False)
         
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         embed.set_thumbnail(url=logo)
