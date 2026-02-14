@@ -1,11 +1,11 @@
 import discord
 from discord.ext import commands
 import json
-import os
 from datetime import datetime
 import pytz
 import asyncio
 from .utils import is_owner_check
+import db
 
 # File paths
 POINTS_FILE = "union_points.json"
@@ -18,18 +18,11 @@ def load_json(file_path, default=None):
     """Load JSON data from file"""
     if default is None:
         default = {}
-    if not os.path.exists(file_path):
-        return default
-    try:
-        with open(file_path, "r") as f:
-            return json.load(f)
-    except:
-        return default
+    return db.get_json(file_path, default, migrate_file=file_path)
 
 def save_json(file_path, data):
     """Save JSON data to file"""
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=4)
+    db.set_json(file_path, data)
 
 def get_points():
     """Load points data"""

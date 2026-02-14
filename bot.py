@@ -5,6 +5,7 @@ import os
 import asyncio
 from dotenv import load_dotenv
 from cogs.utils import load_json
+import db
 
 # Load environment variables
 load_dotenv()
@@ -16,13 +17,12 @@ PREFIXES = ["-", ""]
 
 def get_prefix(bot, message):
     try:
-        with open("info.json", "r") as f:
-            data = json.load(f)
-            no_prefix_users = data.get("np", [])
-            if message.author.id in no_prefix_users:
-                return PREFIXES
-            else:
-                return "-"
+        data = load_json("info.json")
+        no_prefix_users = data.get("np", [])
+        if message.author.id in no_prefix_users:
+            return PREFIXES
+        else:
+            return "-"
     except:
         return "-"
 
@@ -46,9 +46,13 @@ async def on_ready():
     print(f"------ SYSTEM ONLINE ------")
 
 async def setup_hook():
+    db.init_db()
     # Load Extensions
     extensions = [
         "cogs.forex",
+        "cogs.giveaways",
+        "cogs.announcements",
+        "cogs.audit_log",
         "cogs.moderation",
         "cogs.utility",
         "cogs.admin",

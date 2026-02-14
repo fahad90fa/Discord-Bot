@@ -1,50 +1,20 @@
 import discord
 from discord.ext import commands, tasks
-import json
-import os
-import tempfile
 import asyncio
 from datetime import datetime, time
 import pytz
 from typing import Optional
+import db
 
 ATTENDANCE_FILE = "attendance_data.json"
 ATTENDANCE_CONFIG_FILE = "attendance_config.json"
 ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
 def load_json(file):
-    try:
-        with open(file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        backup_file = f"{file}.bak"
-        if os.path.exists(backup_file):
-            try:
-                with open(backup_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                return {}
-        return {}
-    except Exception:
-        return {}
+    return db.get_json(file, {}, migrate_file=file)
 
 def save_json(file, data):
-    file_dir = os.path.dirname(file) or "."
-    backup_file = f"{file}.bak"
-    fd, temp_path = tempfile.mkstemp(prefix=".tmp_attendance_", suffix=".json", dir=file_dir)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, file)
-        with open(backup_file, "w", encoding="utf-8") as backup:
-            json.dump(data, backup, indent=2)
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+    db.set_json(file, data)
 
 
 def get_user_day_status(day_data: dict, user_id: str):

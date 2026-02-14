@@ -1,6 +1,7 @@
 import json
 import os
 import discord
+import db
 
 FILE = "moderation.json"
 BAN_LIMIT_FILE = "ban_limit.json"
@@ -13,17 +14,11 @@ ANTISPAM_FILE = "antispam.json"
 AUTOMOD_FILE = "automod.json"
 
 def load_json(filename):
-    try:
-        with open(filename, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.decoder.JSONDecodeError:
-        return {}
+    # Auto-migrate from existing JSON file into DB on first access.
+    return db.get_json(filename, {}, migrate_file=filename)
 
 def save_json(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
+    db.set_json(filename, data)
 
 def load_afk():
     return load_json(AFK_FILE)

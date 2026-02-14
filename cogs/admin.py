@@ -233,12 +233,13 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def add(self, ctx, user: discord.Member):
         try:
-            with open('info.json', 'r') as f: data = json.load(f)
+            data = load_json("info.json")
+            data.setdefault("np", [])
             if user.id in data["np"]:
                 await ctx.send(f"❌ {user.name} already has no prefix.")
             else:
                 data["np"].append(user.id)
-                with open('info.json', 'w') as f: json.dump(data, f, indent=4)
+                save_json("info.json", data)
                 await ctx.send(f"✅ Added no prefix to {user.name}")
         except Exception as e:
             await ctx.send(f"Error: {e}")
@@ -247,10 +248,11 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def remove(self, ctx, user: discord.Member):
         try:
-            with open('info.json', 'r') as f: data = json.load(f)
+            data = load_json("info.json")
+            data.setdefault("np", [])
             if user.id in data["np"]:
                 data["np"].remove(user.id)
-                with open('info.json', 'w') as f: json.dump(data, f, indent=4)
+                save_json("info.json", data)
                 await ctx.send(f"✅ Removed no prefix from {user.name}")
             else:
                 await ctx.send("❌ User doesn't have no prefix.")

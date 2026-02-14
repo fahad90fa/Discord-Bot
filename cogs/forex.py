@@ -7,49 +7,33 @@ import os
 from datetime import datetime, timedelta
 import pytz
 import xml.etree.ElementTree as ET
+import db
 
 SENT_NEWS_FILE = "sent_news.json"
 SESSION_ALERT_FILE = "session_alert_config.json"
 from .utils import get_news_channel, set_news_channel, get_reminder_channel, set_reminder_channel, is_owner_check
 
 def load_sent_news():
-    if not os.path.exists(SENT_NEWS_FILE):
-        return {}
-    try:
-        with open(SENT_NEWS_FILE, "r") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except:
-        return {}
+    return db.get_json(SENT_NEWS_FILE, {}, migrate_file=SENT_NEWS_FILE)
 
 def save_sent_news(data):
-    with open(SENT_NEWS_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    db.set_json(SENT_NEWS_FILE, data)
 
 def load_session_alert_config():
     default = {"channels": {}, "last_sent": {}, "roles": {"session": {}, "news": {}}}
-    if not os.path.exists(SESSION_ALERT_FILE):
-        return default
-    try:
-        with open(SESSION_ALERT_FILE, "r") as f:
-            data = json.load(f)
-            if not isinstance(data, dict):
-                return default
-            data.setdefault("channels", {})
-            data.setdefault("last_sent", {})
-            roles = data.setdefault("roles", {})
-            if not isinstance(roles, dict):
-                data["roles"] = {"session": {}, "news": {}}
-            else:
-                roles.setdefault("session", {})
-                roles.setdefault("news", {})
-            return data
-    except Exception:
-        return default
+    data = db.get_json(SESSION_ALERT_FILE, default, migrate_file=SESSION_ALERT_FILE)
+    data.setdefault("channels", {})
+    data.setdefault("last_sent", {})
+    roles = data.setdefault("roles", {})
+    if not isinstance(roles, dict):
+        data["roles"] = {"session": {}, "news": {}}
+    else:
+        roles.setdefault("session", {})
+        roles.setdefault("news", {})
+    return data
 
 def save_session_alert_config(data):
-    with open(SESSION_ALERT_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    db.set_json(SESSION_ALERT_FILE, data)
 
 def get_session_open_utc(now_utc, tz_name, hour, minute=0):
     """Return session open time for current local day in UTC + local datetime."""
@@ -85,36 +69,28 @@ LAST_FETCH_TIME = None
 
 def load_cache_from_file():
     global NEWS_CACHE, LAST_FETCH_TIME
-    if os.path.exists(CACHE_FILE):
-        if os.path.getsize(CACHE_FILE) == 0:
-            return
-        try:
-            with open(CACHE_FILE, "r") as f:
-                data = json.load(f)
-                if isinstance(data, dict) and "news" in data:
-                    NEWS_CACHE = data.get("news", [])
-                    fetch_time_str = data.get("fetch_time")
-                    if fetch_time_str:
-                        LAST_FETCH_TIME = datetime.fromisoformat(fetch_time_str)
-                    print(f"📁 Loaded {len(NEWS_CACHE)} events from cache.")
-                else:
-                    NEWS_CACHE = []
-                    LAST_FETCH_TIME = None
-        except Exception as e:
-            print(f"Error loading cache file: {e}")
-            # If the file is broken, let's reset it
-            NEWS_CACHE = []
-            LAST_FETCH_TIME = None
+    data = db.get_json(CACHE_FILE, {}, migrate_file=CACHE_FILE)
+    if isinstance(data, dict) and "news" in data:
+        NEWS_CACHE = data.get("news", [])
+        fetch_time_str = data.get("fetch_time")
+        if fetch_time_str:
+            try:
+                LAST_FETCH_TIME = datetime.fromisoformat(fetch_time_str)
+            except Exception:
+                LAST_FETCH_TIME = None
+        print(f"📁 Loaded {len(NEWS_CACHE)} events from cache.")
+    else:
+        NEWS_CACHE = []
+        LAST_FETCH_TIME = None
 
 def save_cache_to_file():
     try:
-        with open(CACHE_FILE, "w") as f:
-            json.dump({
-                "news": NEWS_CACHE,
-                "fetch_time": LAST_FETCH_TIME.isoformat() if LAST_FETCH_TIME else None
-            }, f, indent=4)
+        db.set_json(CACHE_FILE, {
+            "news": NEWS_CACHE,
+            "fetch_time": LAST_FETCH_TIME.isoformat() if LAST_FETCH_TIME else None
+        })
     except Exception as e:
-        print(f"Error saving cache file: {e}")
+        print(f"Error saving cache: {e}")
 
 def parse_xml_events(root):
     events = []
@@ -196,9 +172,10 @@ async def fetch_news_data(force=False):
     if force:
         NEWS_CACHE = []
         LAST_FETCH_TIME = None
-        if os.path.exists(CACHE_FILE):
-            try: os.remove(CACHE_FILE)
-            except: pass
+        try:
+            db.delete_key(CACHE_FILE)
+        except Exception:
+            pass
 
     # 1. Try to read from local XML file specifically provided by user
     if os.path.exists("current_news.xml"):
@@ -806,10 +783,12 @@ class ForexNews(commands.Cog):
         LAST_FETCH_TIME = None
         
         # Delete cache file to ensure clean slate
-        if os.path.exists(CACHE_FILE):
-            os.remove(CACHE_FILE)
+        try:
+            db.delete_key(CACHE_FILE)
             await asyncio.sleep(0.5)
-            await load_msg.edit(content="🧹 `LOCAL CACHE DELETED. RE-ESTABLISHING LINK...`")
+            await load_msg.edit(content="🧹 `CACHE PURGED. RE-ESTABLISHING LINK...`")
+        except Exception:
+            pass
         
         # Force a fetch
         news_data = await fetch_news_data()
@@ -971,15 +950,15 @@ class ForexNews(commands.Cog):
         status_text = ""
         
         for file_path, file_name in files_to_reset:
-            if os.path.exists(file_path):
-                try:
-                    os.remove(file_path)
-                    status_text += f"✅ `{file_name}` DELETED\n"
+            try:
+                if db.has_key(file_path):
+                    db.delete_key(file_path)
+                    status_text += f"✅ `{file_name}` RESET\n"
                     reset_count += 1
-                except Exception as e:
-                    status_text += f"❌ `{file_name}` FAILED: {str(e)}\n"
-            else:
-                status_text += f"⚠️ `{file_name}` NOT FOUND\n"
+                else:
+                    status_text += f"⚠️ `{file_name}` EMPTY\n"
+            except Exception as e:
+                status_text += f"❌ `{file_name}` FAILED: {str(e)}\n"
         
         await asyncio.sleep(0.5)
         await load_msg.edit(content="🧹 `CLEARING MEMORY CACHE...`")

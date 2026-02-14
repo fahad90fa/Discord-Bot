@@ -1,0 +1,125 @@
+import json
+import os
+import sqlite3
+import threading
+from datetime import datetime
+
+DB_PATH = os.getenv("BOT_DB_PATH") or "bot_data.sqlite3"
+
+_conn = None
+_lock = threading.Lock()
+
+
+def _connect():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    # Better concurrency for bots with multiple tasks.
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    return conn
+
+
+def init_db():
+    global _conn
+    with _lock:
+        if _conn is None:
+            _conn = _connect()
+        _conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS kv (
+              k TEXT PRIMARY KEY,
+              v TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            )
+            """
+        )
+        _conn.commit()
+
+
+def _ensure():
+    if _conn is None:
+        init_db()
+
+
+def _now_iso():
+    return datetime.utcnow().isoformat()
+
+
+def has_key(key: str) -> bool:
+    _ensure()
+    with _lock:
+        row = _conn.execute("SELECT 1 FROM kv WHERE k = ?", (key,)).fetchone()
+        return row is not None
+
+
+def get_raw(key: str):
+    _ensure()
+    with _lock:
+        row = _conn.execute("SELECT v FROM kv WHERE k = ?", (key,)).fetchone()
+        return row["v"] if row else None
+
+
+def set_raw(key: str, value: str):
+    _ensure()
+    with _lock:
+        _conn.execute(
+            "INSERT INTO kv (k, v, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at",
+            (key, value, _now_iso()),
+        )
+        _conn.commit()
+
+
+def delete_key(key: str):
+    _ensure()
+    with _lock:
+        _conn.execute("DELETE FROM kv WHERE k = ?", (key,))
+        _conn.commit()
+
+
+def migrate_from_file_if_needed(key: str, file_path: str):
+    """
+    If DB key is missing and a JSON file exists, load it once and store in DB.
+    Leaves the file on disk (non-destructive migration).
+    """
+    if has_key(key):
+        return
+    if not file_path or not os.path.exists(file_path):
+        return
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return
+    try:
+        set_json(key, data)
+    except Exception:
+        return
+
+
+def get_json(key: str, default, migrate_file: str | None = None):
+    """
+    Read JSON value from DB.
+    - `default` defines the expected type (dict/list/etc).
+    - If missing, returns `default`.
+    - If `migrate_file` is set, will auto-migrate from that JSON file into DB on first read.
+    """
+    if migrate_file:
+        migrate_from_file_if_needed(key, migrate_file)
+
+    raw = get_raw(key)
+    if raw is None:
+        return default
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return default
+    if not isinstance(value, type(default)):
+        return default
+    return value
+
+
+def set_json(key: str, value):
+    set_raw(key, json.dumps(value, ensure_ascii=False))
+

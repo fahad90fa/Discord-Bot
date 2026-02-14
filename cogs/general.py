@@ -13,6 +13,8 @@ class HelpDropdown(discord.ui.Select):
             discord.SelectOption(label="/ Market Intelligence", value="Market Intelligence", description="Forex tools & economic data"),
             discord.SelectOption(label="/ Union Points", value="Union Points", description="Member ranking & rewards system"),
             discord.SelectOption(label="/ Attendance System", value="Attendance System", description="Batch attendance tracking"),
+            discord.SelectOption(label="/ Giveaways & Events", value="Giveaways & Events", description="Giveaways + scheduled announcements"),
+            discord.SelectOption(label="/ Logging & Audit", value="Logging & Audit", description="Advanced server audit logs"),
             discord.SelectOption(label="/ System Utilities", value="System Utilities", description="General tools & identity scans"),
             discord.SelectOption(label="/ High Command", value="High Command", description="Institutional governance & config")
         ]
@@ -91,6 +93,64 @@ class HelpDropdown(discord.ui.Select):
             embed.add_field(name="📦 [STEAL]", value="```ansi\n\u001b[0;37mAsset (Emoji) Extraction.\u001b[0m\n```", inline=False)
             embed.add_field(name="💤 [AFK]", value="```ansi\n\u001b[0;37mOff-Grid Status Mode.\u001b[0m\n```", inline=False)
 
+        elif self.values[0] == "Giveaways & Events":
+            embed.title = "🎉 SECTOR: GIVEAWAYS & EVENTS"
+            embed.color = 0x2ecc71
+            embed.description = (
+                "```ansi\n"
+                "\u001b[1;36mGIVEAWAY MANAGER + SCHEDULED ANNOUNCEMENTS\u001b[0m\n"
+                "```"
+            )
+            embed.add_field(
+                name="🎁 [GIVEAWAY START]",
+                value="```ansi\n\u001b[0;37m-giveaway start 2h 1 #channel --join 7d --role @Role Prize\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="🛑 [GIVEAWAY END]",
+                value="```ansi\n\u001b[0;37m-giveaway end <message_id> [#channel]\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="🔁 [GIVEAWAY REROLL]",
+                value="```ansi\n\u001b[0;37m-giveaway reroll <message_id> [#channel]\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="📋 [GIVEAWAY LIST]",
+                value="```ansi\n\u001b[0;37m-giveaway list\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="📅 [ANNOUNCE ADD]",
+                value="```ansi\n\u001b[0;37m-announce add #channel 2026-02-15 21:00 Message (PKT)\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="📋 [ANNOUNCE LIST/CANCEL]",
+                value="```ansi\n\u001b[0;37m-announce list\n-announce cancel <id>\u001b[0m\n```",
+                inline=False
+            )
+
+        elif self.values[0] == "Logging & Audit":
+            embed.title = "🧾 SECTOR: LOGGING & AUDIT"
+            embed.color = 0x3498db
+            embed.description = (
+                "```ansi\n"
+                "\u001b[1;36mADVANCED AUDIT LOGS (MESSAGE / ROLES / CHANNELS / VOICE)\u001b[0m\n"
+                "```"
+            )
+            embed.add_field(
+                name="🛰️ [SET AUDIT CHANNEL]",
+                value="```ansi\n\u001b[0;37m-setauditlog #channel\u001b[0m\n```",
+                inline=False
+            )
+            embed.add_field(
+                name="🧹 [AUDIT OFF]",
+                value="```ansi\n\u001b[0;37m-auditlogoff\u001b[0m\n```",
+                inline=False
+            )
+
         elif self.values[0] == "Union Points":
             embed.title = "💎 SECTOR: UNION POINTS"
             embed.color = 0xf39c12
@@ -111,6 +171,7 @@ class HelpDropdown(discord.ui.Select):
             embed.color = 0xf1c40f
             embed.add_field(name="📝 [SETMODLOG]", value="```ansi\n\u001b[0;37mSecure overwatch logging.\u001b[0m\n```", inline=False)
             embed.add_field(name="📍 [SETNEWS]", value="```ansi\n\u001b[0;37mNews feed channel setup.\u001b[0m\n```", inline=False)
+            embed.add_field(name="🧾 [SETAUDITLOG]", value="```ansi\n\u001b[0;37mAudit channel setup.\u001b[0m\n```", inline=False)
             embed.add_field(name="🛡️ [BYPASS]", value="```ansi\n\u001b[0;37mAuto-Mod immunity role.\u001b[0m\n```", inline=False)
             embed.add_field(name="⚙️ [SETSTATUS]", value="```ansi\n\u001b[0;37mPresence & activity config.\u001b[0m\n```", inline=False)
 
