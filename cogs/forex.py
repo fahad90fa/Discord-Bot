@@ -1166,7 +1166,13 @@ class ForexNews(commands.Cog):
         roles_cfg.setdefault("news", roles_cfg.get("news", {}))
         save_session_alert_config(config)
 
-        await ctx.send(f"✅ Session alert role set to {role.mention}")
+        embed = discord.Embed(
+            title="✅ SESSION ROLE UPDATED",
+            description=f"**Session alert role:** {role.mention}",
+            color=0x2ecc71
+        )
+        embed.set_footer(text="TRADERS UNION • Role Routing")
+        await ctx.send(embed=embed)
 
     @role_group.command(name="news")
     @is_owner_check()
@@ -1179,7 +1185,13 @@ class ForexNews(commands.Cog):
         roles_cfg.setdefault("session", roles_cfg.get("session", {}))
         save_session_alert_config(config)
 
-        await ctx.send(f"✅ News alert role set to {role.mention}")
+        embed = discord.Embed(
+            title="✅ NEWS ROLE UPDATED",
+            description=f"**News alert role:** {role.mention}",
+            color=0x2ecc71
+        )
+        embed.set_footer(text="TRADERS UNION • Role Routing")
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(ForexNews(bot))
