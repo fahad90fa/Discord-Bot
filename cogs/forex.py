@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 SENT_NEWS_FILE = "sent_news.json"
 SESSION_ALERT_FILE = "session_alert_config.json"
-from .utils import get_news_channel, set_news_channel, is_owner_check
+from .utils import get_news_channel, set_news_channel, get_reminder_channel, set_reminder_channel, is_owner_check
 
 def load_sent_news():
     if not os.path.exists(SENT_NEWS_FILE):
@@ -286,6 +286,11 @@ class ForexNews(commands.Cog):
         if not channel:
             return
 
+        reminder_channel = None
+        reminder_channel_id = get_reminder_channel()
+        if reminder_channel_id:
+            reminder_channel = self.bot.get_channel(int(reminder_channel_id))
+
         session_cfg = load_session_alert_config()
         guild_id = str(channel.guild.id)
         news_role_id = session_cfg.get("roles", {}).get("news", {}).get(guild_id)
@@ -430,7 +435,8 @@ class ForexNews(commands.Cog):
                 
                 if not event_record.get("reminder_sent") and impact in ["High", "Medium"] and is_today:
                     embed = create_news_embed("⏳ News in 30 Mins", "Forex Factory Reminder")
-                    await channel.send(
+                    target_channel = reminder_channel or channel
+                    await target_channel.send(
                         content=news_ping if news_ping else None,
                         embed=embed,
                         allowed_mentions=discord.AllowedMentions(roles=True)
@@ -656,7 +662,7 @@ class ForexNews(commands.Cog):
                 imp_embed.set_footer(text=f"TRADERS UNION • {imp_key.upper()} ANALYSIS", icon_url="https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441")
                 await ctx.send(embed=imp_embed)
 
-    @commands.command(name="reminders", aliases=["reminder"])
+    @commands.command(name="reminders", aliases=["reminderstatus"])
     async def reminder_status(self, ctx):
         """Check the status of upcoming news reminders (fetches from API)"""
         load_msg = await ctx.send("📡 `FETCHING LIVE DATA FROM API...`")
@@ -1120,6 +1126,72 @@ class ForexNews(commands.Cog):
         
         await load_msg.delete()
         await ctx.send(embed=embed)
+
+    @commands.group(name="reminder", invoke_without_command=True)
+    @is_owner_check()
+    async def reminder_group(self, ctx):
+        """Configure 30-min reminder channel"""
+        await ctx.send("Use: `-reminder set #channel`")
+
+    @reminder_group.command(name="set", aliases=["channel"])
+    @is_owner_check()
+    async def set_reminder_broadcast(self, ctx, channel: discord.TextChannel):
+        """Set the channel for 30-min news reminders (Owner Only)"""
+        set_reminder_channel(channel.id)
+        logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
+        embed = discord.Embed(
+            title="✅ REMINDER CHANNEL SET",
+            description=(
+                "```ansi\n"
+                f"\u001b[1;36mCHANNEL :\u001b[0m \u001b[0;37m{channel.name.upper()}\u001b[0m\n"
+                "\u001b[1;33mMODE    :\u001b[0m \u001b[0;37m30-MIN NEWS REMINDERS\u001b[0m\n"
+                "```"
+            ),
+            color=0x2ecc71
+        )
+        embed.set_author(name="TRADERS UNION COMMAND", icon_url=logo)
+        embed.set_footer(text="30-minute reminders will be posted here")
+        await ctx.send(embed=embed)
+
+    @reminder_group.command(name="test")
+    @is_owner_check()
+    async def test_reminder_broadcast(self, ctx):
+        """Send a test 30-min reminder to the configured reminder channel (Owner Only)"""
+        reminder_channel_id = get_reminder_channel()
+        target_channel = self.bot.get_channel(int(reminder_channel_id)) if reminder_channel_id else None
+        if not target_channel:
+            target_channel = ctx.channel
+
+        session_cfg = load_session_alert_config()
+        guild_id = str(ctx.guild.id)
+        news_role_id = session_cfg.get("roles", {}).get("news", {}).get(guild_id)
+        news_ping = build_role_ping(ctx.guild, news_role_id)
+
+        now_pkt = datetime.now(pytz.timezone("Asia/Karachi"))
+        embed = discord.Embed(
+            title="⏳ TEST: News in 30 Mins",
+            description=(
+                "**This is a test reminder message.**\n"
+                f"**PKT Time:** `{now_pkt.strftime('%I:%M %p')}`\n"
+                f"**Target Channel:** {target_channel.mention}"
+            ),
+            color=0x2b2d31,
+            timestamp=datetime.utcnow()
+        )
+        embed.set_footer(text="TRADERS UNION • Reminder Test")
+
+        await target_channel.send(
+            content=news_ping if news_ping else None,
+            embed=embed,
+            allowed_mentions=discord.AllowedMentions(roles=True)
+        )
+
+        conf = discord.Embed(
+            title="✅ REMINDER TEST SENT",
+            description=f"Sent test reminder to {target_channel.mention}",
+            color=0x2ecc71
+        )
+        await ctx.send(embed=conf)
 
     @commands.command(name="alert", aliases=["setalert", "sessionalert"])
     @is_owner_check()

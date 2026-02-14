@@ -69,6 +69,15 @@ def set_news_channel(channel_id):
     data["news_channel"] = channel_id
     save_json(NEWS_CONFIG_FILE, data)
 
+def get_reminder_channel():
+    data = load_json(NEWS_CONFIG_FILE)
+    return data.get("reminder_channel")
+
+def set_reminder_channel(channel_id):
+    data = load_json(NEWS_CONFIG_FILE)
+    data["reminder_channel"] = channel_id
+    save_json(NEWS_CONFIG_FILE, data)
+
 def get_antilink_config(guild_id):
     data = load_json(ANTILINK_FILE)
     return data.get(str(guild_id), {"enabled": False, "punishment": "mute", "duration": 60})
