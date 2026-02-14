@@ -143,6 +143,27 @@ def is_manager_or_owner():
         return ctx.author.id in managers or await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
+async def resolve_username(bot, guild, user_id, fallback_name="Unknown User"):
+    """Resolve Discord username for leaderboard display."""
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return fallback_name
+
+    member = guild.get_member(user_id_int) if guild else None
+    if member:
+        return member.name
+
+    user = bot.get_user(user_id_int)
+    if user:
+        return user.name
+
+    try:
+        user = await bot.fetch_user(user_id_int)
+        return user.name
+    except Exception:
+        return fallback_name
+
 async def update_leaderboard_message(bot):
     """Update the pinned leaderboard message"""
     lb_config = get_lb_config()
@@ -199,18 +220,12 @@ async def update_leaderboard_message(bot):
                     medal = f"`#{idx}`"
                 
                 points = data["points"]
-                name = data["name"]
+                fallback_name = data.get("username") or data.get("name", "Unknown User")
+                name = await resolve_username(bot, channel.guild, user_id, fallback_name)
                 
                 leaderboard_text += f"{medal} **{name}**\n└ Points: `{points:,}`\n\n"
             
             embed.description += leaderboard_text
-            
-            # Stats
-            total_users = len(points_data)
-            total_points = sum(data["points"] for data in points_data.values())
-            
-            embed.add_field(name="📊 Total Users", value=f"`{total_users}`", inline=True)
-            embed.add_field(name="💰 Total Points", value=f"`{total_points:,}`", inline=True)
             
             # Last updated
             pkt_time = datetime.now(pytz.timezone('Asia/Karachi'))
@@ -244,14 +259,16 @@ class UnionPoints(commands.Cog):
         # Update points
         if user_id not in points_data:
             points_data[user_id] = {
-                "name": member.display_name,
+                "name": member.name,
+                "username": member.name,
                 "points": 0,
                 "last_updated": None
             }
         
         old_points = points_data[user_id]["points"]
         points_data[user_id]["points"] += points
-        points_data[user_id]["name"] = member.display_name
+        points_data[user_id]["name"] = member.name
+        points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
         
         save_points(points_data)
@@ -302,7 +319,8 @@ class UnionPoints(commands.Cog):
         
         old_points = points_data[user_id]["points"]
         points_data[user_id]["points"] = max(0, old_points - points)
-        points_data[user_id]["name"] = member.display_name
+        points_data[user_id]["name"] = member.name
+        points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
         
         save_points(points_data)
@@ -352,7 +370,8 @@ class UnionPoints(commands.Cog):
 
         old_points = points_data[user_id]["points"]
         points_data[user_id]["points"] = 0
-        points_data[user_id]["name"] = member.display_name
+        points_data[user_id]["name"] = member.name
+        points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
 
         save_points(points_data)
@@ -464,18 +483,12 @@ class UnionPoints(commands.Cog):
                 medal = f"`#{idx}`"
             
             points = data["points"]
-            name = data["name"]
+            fallback_name = data.get("username") or data.get("name", "Unknown User")
+            name = await resolve_username(self.bot, ctx.guild, user_id, fallback_name)
             
             leaderboard_text += f"{medal} **{name}**\n└ Points: `{points:,}`\n\n"
         
         embed.description += leaderboard_text
-        
-        # Stats
-        total_users = len(points_data)
-        total_points = sum(data["points"] for data in points_data.values())
-        
-        embed.add_field(name="📊 Total Users", value=f"`{total_users}`", inline=True)
-        embed.add_field(name="💰 Total Points", value=f"`{total_points:,}`", inline=True)
         
         embed.set_footer(text="TRADERS UNION • Real-time Rankings")
         embed.set_thumbnail(url=logo)
@@ -666,18 +679,12 @@ class UnionPoints(commands.Cog):
                     medal = f"`#{idx}`"
                 
                 points = data["points"]
-                name = data["name"]
+                fallback_name = data.get("username") or data.get("name", "Unknown User")
+                name = await resolve_username(self.bot, ctx.guild, user_id, fallback_name)
                 
                 leaderboard_text += f"{medal} **{name}**\n└ Points: `{points:,}`\n\n"
             
             embed.description += leaderboard_text
-            
-            # Stats
-            total_users = len(points_data)
-            total_points = sum(data["points"] for data in points_data.values())
-            
-            embed.add_field(name="📊 Total Users", value=f"`{total_users}`", inline=True)
-            embed.add_field(name="💰 Total Points", value=f"`{total_points:,}`", inline=True)
             
             # Last updated
             pkt_time = datetime.now(pytz.timezone('Asia/Karachi'))

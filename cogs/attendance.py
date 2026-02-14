@@ -1,23 +1,50 @@
 import discord
 from discord.ext import commands, tasks
 import json
+import os
+import tempfile
+import asyncio
 from datetime import datetime, time
 import pytz
 from typing import Optional
 
 ATTENDANCE_FILE = "attendance_data.json"
 ATTENDANCE_CONFIG_FILE = "attendance_config.json"
+ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
 def load_json(file):
     try:
-        with open(file, "r") as f:
+        with open(file, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        backup_file = f"{file}.bak"
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+    except Exception:
         return {}
 
 def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f, indent=2)
+    file_dir = os.path.dirname(file) or "."
+    backup_file = f"{file}.bak"
+    fd, temp_path = tempfile.mkstemp(prefix=".tmp_attendance_", suffix=".json", dir=file_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, file)
+        with open(backup_file, "w", encoding="utf-8") as backup:
+            json.dump(data, backup, indent=2)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def get_user_day_status(day_data: dict, user_id: str):
@@ -104,48 +131,48 @@ class AttendanceButton(discord.ui.View):
             )
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        # Mark attendance
-        attendance_data = load_json(ATTENDANCE_FILE)
         today = now.strftime("%d/%m/%y")
         user_id = str(interaction.user.id)
-        
-        if guild_id not in attendance_data:
-            attendance_data[guild_id] = {}
-        if user_batch_role_id not in attendance_data[guild_id]:
-            attendance_data[guild_id][user_batch_role_id] = {}
-        if today not in attendance_data[guild_id][user_batch_role_id]:
-            attendance_data[guild_id][user_batch_role_id][today] = {}
-        
-        day_data = attendance_data[guild_id][user_batch_role_id][today]
-        current_status, current_time = get_user_day_status(day_data, user_id)
+        async with ATTENDANCE_DATA_LOCK:
+            attendance_data = load_json(ATTENDANCE_FILE)
 
-        # Students can mark only once per day (cannot switch present/absent later).
-        if user_id in day_data:
-            status_label = "PRESENT" if current_status == "present" else "ABSENT"
-            emoji = "✅" if current_status == "present" else "❌"
-            embed = discord.Embed(
-                title="📋 ALREADY MARKED",
-                description=(
-                    "```ansi\n"
-                    "\u001b[1;33mINFO  :\u001b[0m \u001b[0;37mYou already marked attendance today\u001b[0m\n"
-                    f"\u001b[1;33mBATCH :\u001b[0m \u001b[0;37m{user_batch_name}\u001b[0m\n"
-                    f"\u001b[1;33mDATE  :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
-                    f"\u001b[1;33mSTATUS:\u001b[0m \u001b[0;37m{emoji} {status_label}\u001b[0m\n"
-                    f"\u001b[1;33mTIME  :\u001b[0m \u001b[0;37m{current_time or 'N/A'}\u001b[0m\n"
-                    "\u001b[1;31mNOTE  :\u001b[0m \u001b[0;37mStatus cannot be changed by students\u001b[0m\n"
-                    "```"
-                ),
-                color=0xf39c12
-            )
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
+            if guild_id not in attendance_data:
+                attendance_data[guild_id] = {}
+            if user_batch_role_id not in attendance_data[guild_id]:
+                attendance_data[guild_id][user_batch_role_id] = {}
+            if today not in attendance_data[guild_id][user_batch_role_id]:
+                attendance_data[guild_id][user_batch_role_id][today] = {}
 
-        # Save attendance status
-        attendance_data[guild_id][user_batch_role_id][today][user_id] = {
-            "status": "present",
-            "time": now.strftime("%I:%M %p"),
-            "username": interaction.user.name
-        }
-        save_json(ATTENDANCE_FILE, attendance_data)
+            day_data = attendance_data[guild_id][user_batch_role_id][today]
+            current_status, current_time = get_user_day_status(day_data, user_id)
+
+            # Students can mark only once per day (cannot switch present/absent later).
+            if user_id in day_data:
+                status_label = "PRESENT" if current_status == "present" else "ABSENT"
+                emoji = "✅" if current_status == "present" else "❌"
+                embed = discord.Embed(
+                    title="📋 ALREADY MARKED",
+                    description=(
+                        "```ansi\n"
+                        "\u001b[1;33mINFO  :\u001b[0m \u001b[0;37mYou already marked attendance today\u001b[0m\n"
+                        f"\u001b[1;33mBATCH :\u001b[0m \u001b[0;37m{user_batch_name}\u001b[0m\n"
+                        f"\u001b[1;33mDATE  :\u001b[0m \u001b[0;37m{today}\u001b[0m\n"
+                        f"\u001b[1;33mSTATUS:\u001b[0m \u001b[0;37m{emoji} {status_label}\u001b[0m\n"
+                        f"\u001b[1;33mTIME  :\u001b[0m \u001b[0;37m{current_time or 'N/A'}\u001b[0m\n"
+                        "\u001b[1;31mNOTE  :\u001b[0m \u001b[0;37mStatus cannot be changed by students\u001b[0m\n"
+                        "```"
+                    ),
+                    color=0xf39c12
+                )
+                return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            # Save attendance status
+            attendance_data[guild_id][user_batch_role_id][today][user_id] = {
+                "status": "present",
+                "time": now.strftime("%I:%M %p"),
+                "username": interaction.user.name
+            }
+            save_json(ATTENDANCE_FILE, attendance_data)
         
         # Send log to attendance log channel
         log_channel_id = config.get(guild_id, {}).get("log_channel")
@@ -696,30 +723,31 @@ class Attendance(commands.Cog):
             )
             return await ctx.send(embed=embed)
         
-        attendance_data = load_json(ATTENDANCE_FILE)
         user_id = str(user.id)
-        
-        if guild_id not in attendance_data:
-            attendance_data[guild_id] = {}
-        if role_id not in attendance_data[guild_id]:
-            attendance_data[guild_id][role_id] = {}
-        if date not in attendance_data[guild_id][role_id]:
-            attendance_data[guild_id][role_id][date] = {}
-        
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
-        
-        current_status, _ = get_user_day_status(attendance_data[guild_id][role_id][date], user_id)
-        next_status = "absent" if current_status == "present" else "present"
-        attendance_data[guild_id][role_id][date][user_id] = {
-            "status": next_status,
-            "time": now.strftime("%I:%M %p") + " (Manual)",
-            "username": user.name
-        }
+
+        async with ATTENDANCE_DATA_LOCK:
+            attendance_data = load_json(ATTENDANCE_FILE)
+
+            if guild_id not in attendance_data:
+                attendance_data[guild_id] = {}
+            if role_id not in attendance_data[guild_id]:
+                attendance_data[guild_id][role_id] = {}
+            if date not in attendance_data[guild_id][role_id]:
+                attendance_data[guild_id][role_id][date] = {}
+
+            current_status, _ = get_user_day_status(attendance_data[guild_id][role_id][date], user_id)
+            next_status = "absent" if current_status == "present" else "present"
+            attendance_data[guild_id][role_id][date][user_id] = {
+                "status": next_status,
+                "time": now.strftime("%I:%M %p") + " (Manual)",
+                "username": user.name
+            }
+            save_json(ATTENDANCE_FILE, attendance_data)
+
         status = next_status.upper()
         color = 0x2ecc71 if next_status == "present" else 0xe74c3c
-        
-        save_json(ATTENDANCE_FILE, attendance_data)
         
         embed = discord.Embed(
             title="📝 ATTENDANCE UPDATED",
@@ -986,41 +1014,35 @@ class Attendance(commands.Cog):
             )
             return await ctx.send(embed=embed)
         
-        attendance_data = load_json(ATTENDANCE_FILE)
-        
-        if guild_id not in attendance_data:
-            attendance_data[guild_id] = {}
-        if user_batch_role_id not in attendance_data[guild_id]:
-            attendance_data[guild_id][user_batch_role_id] = {}
-        if date not in attendance_data[guild_id][user_batch_role_id]:
-            attendance_data[guild_id][user_batch_role_id][date] = {}
-        
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
-        
-        if status.lower() == "present":
-            attendance_data[guild_id][user_batch_role_id][date][user_id] = {
-                "status": "present",
-                "time": now.strftime("%I:%M %p") + " (Manual)",
-                "username": user.name
-            }
-            color = 0x2ecc71
-        elif status.lower() == "absent":
-            attendance_data[guild_id][user_batch_role_id][date][user_id] = {
-                "status": "absent",
-                "time": now.strftime("%I:%M %p") + " (Manual)",
-                "username": user.name
-            }
-            color = 0xe74c3c
-        else:
+
+        if status.lower() not in {"present", "absent"}:
             embed = discord.Embed(
                 title="❌ INVALID STATUS",
                 description="Status must be `present` or `absent`",
                 color=0xe74c3c
             )
             return await ctx.send(embed=embed)
-        
-        save_json(ATTENDANCE_FILE, attendance_data)
+
+        async with ATTENDANCE_DATA_LOCK:
+            attendance_data = load_json(ATTENDANCE_FILE)
+
+            if guild_id not in attendance_data:
+                attendance_data[guild_id] = {}
+            if user_batch_role_id not in attendance_data[guild_id]:
+                attendance_data[guild_id][user_batch_role_id] = {}
+            if date not in attendance_data[guild_id][user_batch_role_id]:
+                attendance_data[guild_id][user_batch_role_id][date] = {}
+
+            attendance_data[guild_id][user_batch_role_id][date][user_id] = {
+                "status": status.lower(),
+                "time": now.strftime("%I:%M %p") + " (Manual)",
+                "username": user.name
+            }
+            save_json(ATTENDANCE_FILE, attendance_data)
+
+        color = 0x2ecc71 if status.lower() == "present" else 0xe74c3c
         
         embed = discord.Embed(
             title="📝 ATTENDANCE UPDATED",
