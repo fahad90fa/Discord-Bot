@@ -27,7 +27,7 @@ def save_sent_news(data):
         json.dump(data, f, indent=4)
 
 def load_session_alert_config():
-    default = {"channels": {}, "last_sent": {}}
+    default = {"channels": {}, "last_sent": {}, "roles": {"session": {}, "news": {}}}
     if not os.path.exists(SESSION_ALERT_FILE):
         return default
     try:
@@ -37,6 +37,12 @@ def load_session_alert_config():
                 return default
             data.setdefault("channels", {})
             data.setdefault("last_sent", {})
+            roles = data.setdefault("roles", {})
+            if not isinstance(roles, dict):
+                data["roles"] = {"session": {}, "news": {}}
+            else:
+                roles.setdefault("session", {})
+                roles.setdefault("news", {})
             return data
     except Exception:
         return default
@@ -61,6 +67,16 @@ def get_next_session_open_pkt(now_utc, tz_name, hour, minute=0):
     if open_local <= local_now:
         open_local = open_local + timedelta(days=1)
     return open_local.astimezone(pytz.timezone("Asia/Karachi"))
+
+def build_role_ping(guild, role_id):
+    """Return mention string for valid role ID, otherwise empty string."""
+    if not role_id:
+        return ""
+    try:
+        role = guild.get_role(int(role_id)) if guild else None
+    except (TypeError, ValueError):
+        return ""
+    return role.mention if role else ""
 
 # File-based cache for persistence across restarts
 CACHE_FILE = "news_cache.json"
@@ -270,6 +286,11 @@ class ForexNews(commands.Cog):
         if not channel:
             return
 
+        session_cfg = load_session_alert_config()
+        guild_id = str(channel.guild.id)
+        news_role_id = session_cfg.get("roles", {}).get("news", {}).get(guild_id)
+        news_ping = build_role_ping(channel.guild, news_role_id)
+
         # Check if we have recent cache (less than 6 hours old)
         # This prevents unnecessary API calls and rate limiting
         global LAST_FETCH_TIME
@@ -387,7 +408,11 @@ class ForexNews(commands.Cog):
             if 0 >= time_diff > -2:
                 if not event_record.get("alert_sent"):
                     embed = create_news_embed("ACTUAL NEWS", "LIVE MARKET UPDATE")
-                    msg = await channel.send(embed=embed)
+                    msg = await channel.send(
+                        content=news_ping if news_ping else None,
+                        embed=embed,
+                        allowed_mentions=discord.AllowedMentions(roles=True)
+                    )
                         
                     event_record["alert_sent"] = True
                     event_record["msg_id"] = msg.id
@@ -405,7 +430,11 @@ class ForexNews(commands.Cog):
                 
                 if not event_record.get("reminder_sent") and impact in ["High", "Medium"] and is_today:
                     embed = create_news_embed("⏳ News in 30 Mins", "Forex Factory Reminder")
-                    await channel.send(embed=embed)
+                    await channel.send(
+                        content=news_ping if news_ping else None,
+                        embed=embed,
+                        allowed_mentions=discord.AllowedMentions(roles=True)
+                    )
                     event_record["reminder_sent"] = True
                     sent_news_dict[event_id] = event_record
                     changed = True
@@ -449,6 +478,9 @@ class ForexNews(commands.Cog):
             if not channel:
                 continue
 
+            session_role_id = config.get("roles", {}).get("session", {}).get(guild_id)
+            session_ping = build_role_ping(channel.guild, session_role_id)
+
             guild_last = config.setdefault("last_sent", {}).setdefault(guild_id, {})
 
             for session in sessions:
@@ -469,7 +501,11 @@ class ForexNews(commands.Cog):
                         timestamp=datetime.utcnow()
                     )
                     embed.set_footer(text="TRADERS UNION • Session Alert Engine")
-                    await channel.send(embed=embed)
+                    await channel.send(
+                        content=session_ping if session_ping else None,
+                        embed=embed,
+                        allowed_mentions=discord.AllowedMentions(roles=True)
+                    )
 
                     guild_last[session["key"]] = session_date_key
                     changed = True
@@ -1112,6 +1148,38 @@ class ForexNews(commands.Cog):
         )
         embed.set_footer(text="TRADERS UNION • Auto Session Alerts Active")
         await ctx.send(embed=embed)
+
+    @commands.group(name="role", invoke_without_command=True)
+    @is_owner_check()
+    async def role_group(self, ctx):
+        """Set alert roles: -role alert @Role | -role news @Role"""
+        await ctx.send("Use: `-role alert @Role` or `-role news @Role`")
+
+    @role_group.command(name="alert")
+    @is_owner_check()
+    async def set_session_alert_role(self, ctx, role: discord.Role):
+        """Set role mention for session-open alerts"""
+        config = load_session_alert_config()
+        guild_id = str(ctx.guild.id)
+        roles_cfg = config.setdefault("roles", {})
+        roles_cfg.setdefault("session", {})[guild_id] = role.id
+        roles_cfg.setdefault("news", roles_cfg.get("news", {}))
+        save_session_alert_config(config)
+
+        await ctx.send(f"✅ Session alert role set to {role.mention}")
+
+    @role_group.command(name="news")
+    @is_owner_check()
+    async def set_news_alert_role(self, ctx, role: discord.Role):
+        """Set role mention for forex news alerts"""
+        config = load_session_alert_config()
+        guild_id = str(ctx.guild.id)
+        roles_cfg = config.setdefault("roles", {})
+        roles_cfg.setdefault("news", {})[guild_id] = role.id
+        roles_cfg.setdefault("session", roles_cfg.get("session", {}))
+        save_session_alert_config(config)
+
+        await ctx.send(f"✅ News alert role set to {role.mention}")
 
 async def setup(bot):
     await bot.add_cog(ForexNews(bot))
