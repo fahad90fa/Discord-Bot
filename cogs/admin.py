@@ -8,6 +8,7 @@ import platform
 import socket
 import shutil
 from datetime import datetime, timezone
+import db
 from .utils import (
     load_data, save_data, set_modlog_channel, 
     get_antilink_config, set_antilink_config, 
@@ -70,6 +71,31 @@ class Admin(commands.Cog):
         data = load_data()
         embed = discord.Embed(title="⚔️ BOT MODS", color=0x2ecc71)
         embed.description = self._format_id_list(data.get("mods", []), "mods")
+        await ctx.send(embed=embed)
+
+    @commands.group(name="db", invoke_without_command=True)
+    @is_owner_check()
+    async def db_group(self, ctx):
+        """Database diagnostics (Owner Only)"""
+        await ctx.send("Use: `-db status`")
+
+    @db_group.command(name="status", aliases=["stats"])
+    @is_owner_check()
+    async def db_status(self, ctx):
+        """Show DB status and key count (Owner Only)"""
+        info = db.stats()
+        size_kb = int(info["size_bytes"] / 1024) if info.get("size_bytes") else 0
+
+        embed = discord.Embed(
+            title="🗄️ DATABASE STATUS",
+            color=0x2b2d31
+        )
+        embed.add_field(name="Path", value=f"`{info.get('path')}`", inline=False)
+        embed.add_field(name="File", value="`FOUND`" if info.get("exists") else "`MISSING`", inline=True)
+        embed.add_field(name="Size", value=f"`{size_kb} KB`", inline=True)
+        embed.add_field(name="Keys", value=f"`{info.get('keys', 0)}`", inline=True)
+        embed.add_field(name="Last Updated", value=f"`{info.get('last_updated') or 'N/A'}`", inline=False)
+        embed.set_footer(text="KV SQLite (WAL) • Traders Union Manager")
         await ctx.send(embed=embed)
 
     @commands.group(name="automod", invoke_without_command=True)

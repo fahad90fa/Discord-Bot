@@ -123,3 +123,23 @@ def get_json(key: str, default, migrate_file: str | None = None):
 def set_json(key: str, value):
     set_raw(key, json.dumps(value, ensure_ascii=False))
 
+
+def stats():
+    """Return basic DB health info for diagnostics."""
+    _ensure()
+    with _lock:
+        row = _conn.execute(
+            "SELECT COUNT(*) AS cnt, MAX(updated_at) AS last_updated FROM kv"
+        ).fetchone()
+        cnt = int(row["cnt"]) if row and row["cnt"] is not None else 0
+        last_updated = row["last_updated"] if row else None
+
+    exists = os.path.exists(DB_PATH)
+    size_bytes = os.path.getsize(DB_PATH) if exists else 0
+    return {
+        "path": DB_PATH,
+        "exists": exists,
+        "size_bytes": size_bytes,
+        "keys": cnt,
+        "last_updated": last_updated,
+    }
