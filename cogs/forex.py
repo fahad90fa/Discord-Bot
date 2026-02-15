@@ -404,7 +404,7 @@ class ForexNews(commands.Cog):
 
             # Case 3: 30-minute Reminder (Only for High/Medium and Today's events only)
             # Use a wider window so loop timing jitter does not skip reminders.
-            elif 30 >= time_diff > 2:
+            elif 30 >= time_diff > 0.5:
                 # Check if event is today (PKT)
                 now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
                 event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
@@ -641,16 +641,19 @@ class ForexNews(commands.Cog):
 
     @commands.command(name="reminders", aliases=["reminderstatus"])
     async def reminder_status(self, ctx):
-        """Check the status of upcoming news reminders (fetches from API)"""
-        load_msg = await ctx.send("📡 `FETCHING LIVE DATA FROM API...`")
-        
-        # Fetch directly from API (skip local XML)
-        news_data = await fetch_news_from_api()
+        """Check the status of upcoming news reminders (uses cache + API fallback)"""
+        load_msg = await ctx.send("📡 `FETCHING DATA (CACHE + API)...`")
+
+        news_data = await fetch_news_data()
+        source_label = "CACHE"
+        if not news_data:
+            news_data = await fetch_news_from_api()
+            source_label = "API"
         sent_news_dict = load_sent_news()
         
         if not news_data:
             await load_msg.delete()
-            return await ctx.send("❌ `API SYNC FAILED. CHECK CONNECTION.`")
+            return await ctx.send("❌ `DATA FETCH FAILED. Try -refreshnews or check server connection.`")
 
         now_utc = datetime.now(pytz.UTC)
         now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
@@ -732,7 +735,7 @@ class ForexNews(commands.Cog):
         
         embed = discord.Embed(
             title=f"💎 TRADERS UNION | REMINDER MONITOR ({date_label})",
-            description=f"```ansi\n\u001b[1;36mLIVE API DATA • {date_display} • REAL-TIME TRACKING\u001b[0m\n```",
+            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • {date_display} • REAL-TIME TRACKING\u001b[0m\n```",
             color=0x2b2d31
         )
         embed.set_author(name="TRADERS UNION ANALYTICS", icon_url=logo)
@@ -1000,14 +1003,18 @@ class ForexNews(commands.Cog):
     @commands.command(name="remindercheck", aliases=["checkreminders"])
     async def check_reminders(self, ctx):
         """View upcoming High/Medium impact news that will get 30-min reminders"""
-        load_msg = await ctx.send("📡 `FETCHING UPCOMING REMINDERS...`")
-        
-        news_data = await fetch_news_from_api()
+        load_msg = await ctx.send("📡 `FETCHING UPCOMING REMINDERS (CACHE + API)...`")
+
+        news_data = await fetch_news_data()
+        source_label = "CACHE"
+        if not news_data:
+            news_data = await fetch_news_from_api()
+            source_label = "API"
         sent_news_dict = load_sent_news()
         
         if not news_data:
             await load_msg.delete()
-            return await ctx.send("❌ `DATA FETCH FAILED.`")
+            return await ctx.send("❌ `DATA FETCH FAILED. Try -refreshnews or check server connection.`")
         
         now_utc = datetime.now(pytz.UTC)
         now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
@@ -1048,7 +1055,7 @@ class ForexNews(commands.Cog):
         
         embed = discord.Embed(
             title="🔔 UPCOMING 30-MIN REMINDERS",
-            description=f"```ansi\n\u001b[1;36mTODAY'S HIGH/MEDIUM IMPACT NEWS\u001b[0m\n\u001b[0;37m{now_pkt.strftime('%A, %b %d, %Y')}\u001b[0m\n```",
+            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • TODAY'S HIGH/MEDIUM IMPACT NEWS\u001b[0m\n\u001b[0;37m{now_pkt.strftime('%A, %b %d, %Y')}\u001b[0m\n```",
             color=0x3498db
         )
         embed.set_author(name="TRADERS UNION REMINDER SYSTEM", icon_url=logo)
