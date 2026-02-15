@@ -8,6 +8,7 @@ import db
 
 ATTENDANCE_FILE = "attendance_data.json"
 ATTENDANCE_CONFIG_FILE = "attendance_config.json"
+ATTENDANCE_BATCHES_FILE = "attendance_batches.json"
 ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
 def load_attendance_data(guild_id: str):
@@ -21,6 +22,31 @@ def load_attendance_config(guild_id: str):
 
 def save_attendance_config(guild_id: str, data: dict):
     db.set_json_scoped(ATTENDANCE_CONFIG_FILE, guild_id, data)
+
+def load_attendance_batches(guild_id: str):
+    data = db.get_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, {}, migrate_file=ATTENDANCE_BATCHES_FILE)
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("batches", [])
+    data.setdefault("batch_names", {})
+
+    # Migration: move from old config if present
+    config = load_attendance_config(guild_id)
+    if (not data.get("batches") and config.get("batches")) or (not data.get("batch_names") and config.get("batch_names")):
+        data["batches"] = config.get("batches", data.get("batches", []))
+        data["batch_names"] = config.get("batch_names", data.get("batch_names", {}))
+        # Remove legacy keys
+        if "batches" in config:
+            del config["batches"]
+        if "batch_names" in config:
+            del config["batch_names"]
+        save_attendance_config(guild_id, config)
+        db.set_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, data)
+
+    return data
+
+def save_attendance_batches(guild_id: str, data: dict):
+    db.set_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, data)
 
 
 def get_user_day_status(day_data: dict, user_id: str):
@@ -81,8 +107,9 @@ class AttendanceButton(discord.ui.View):
         
         # Get config and find user's batch
         config = load_attendance_config(guild_id)
-        batches = config.get("batches", [])
-        batch_names = config.get("batch_names", {})
+        batches_data = load_attendance_batches(guild_id)
+        batches = batches_data.get("batches", [])
+        batch_names = batches_data.get("batch_names", {})
         
         # Find which batch role the user has
         user_batch_role_id = None
@@ -227,8 +254,8 @@ class EditAttendanceView(discord.ui.View):
         role = guild.get_role(int(batch_role_id))
         
         # Get batch name from config
-        config = load_attendance_config(self.guild_id)
-        batch_name = config.get("batch_names", {}).get(batch_role_id, "Unknown Batch")
+        batches_data = load_attendance_batches(self.guild_id)
+        batch_name = batches_data.get("batch_names", {}).get(batch_role_id, "Unknown Batch")
         
         attendance_data = load_attendance_data(self.guild_id)
         batch_data = attendance_data.get(batch_role_id, {}).get(self.date, {})
@@ -288,6 +315,7 @@ class Attendance(commands.Cog):
         for guild in self.bot.guilds:
             guild_id = str(guild.id)
             guild_config = load_attendance_config(guild_id)
+            batches_data = load_attendance_batches(guild_id)
             if not guild_config:
                 continue
 
@@ -304,7 +332,7 @@ class Attendance(commands.Cog):
             if not channel and not log_channel:
                 continue
             
-            batches = guild_config.get("batches", [])
+            batches = batches_data.get("batches", [])
             
             # Collect all attendance data for summary
             all_present = []
@@ -316,7 +344,7 @@ class Attendance(commands.Cog):
                     continue
                 
                 # Get batch name
-                batch_name = guild_config.get("batch_names", {}).get(str(batch_role_id), "Unknown Batch")
+                batch_name = batches_data.get("batch_names", {}).get(str(batch_role_id), "Unknown Batch")
                 
                 batch_data = attendance_data.get(str(batch_role_id), {}).get(today, {})
                 
@@ -469,7 +497,7 @@ class Attendance(commands.Cog):
         
         config = load_attendance_config(guild_id)
         if not config:
-            config = {"batches": [], "batch_names": {}}
+            config = {}
 
         if channel is not None:
             config["channel"] = str(channel.id)
@@ -488,7 +516,8 @@ class Attendance(commands.Cog):
         now = datetime.now(tz)
         
         # Get batch list for display
-        batch_names = config.get("batch_names", {})
+        batches_data = load_attendance_batches(guild_id)
+        batch_names = batches_data.get("batch_names", {})
         batch_list = "\n".join([f"• {name}" for name in batch_names.values()]) if batch_names else "No batches added yet"
         
         embed = discord.Embed(
@@ -547,22 +576,17 @@ class Attendance(commands.Cog):
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
         if not config:
-            config = {"batches": [], "batch_names": {}}
-        
-        if "batches" not in config:
-            config["batches"] = []
-        
-        if "batch_names" not in config:
-            config["batch_names"] = {}
+            config = {}
+        batches_data = load_attendance_batches(guild_id)
         
         role_id = str(role.id)
-        if role_id not in config["batches"]:
-            config["batches"].append(role_id)
+        if role_id not in batches_data["batches"]:
+            batches_data["batches"].append(role_id)
         
         # Store batch name
-        config["batch_names"][role_id] = batch_name
+        batches_data["batch_names"][role_id] = batch_name
         
-        save_attendance_config(guild_id, config)
+        save_attendance_batches(guild_id, batches_data)
         
         embed = discord.Embed(
             title="✅ BATCH ADDED",
@@ -585,9 +609,10 @@ class Attendance(commands.Cog):
         guild_id = str(ctx.guild.id)
         attendance_data = load_attendance_data(guild_id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         
-        batches = config.get("batches", [])
-        batch_names = config.get("batch_names", {})
+        batches = batches_data.get("batches", [])
+        batch_names = batches_data.get("batch_names", {})
         
         # Filter by batch name if provided
         if batch_name:
@@ -656,8 +681,9 @@ class Attendance(commands.Cog):
         """Edit attendance for a specific date with pagination"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         
-        batches = config.get("batches", [])
+        batches = batches_data.get("batches", [])
         
         if not batches:
             embed = discord.Embed(
@@ -677,7 +703,8 @@ class Attendance(commands.Cog):
         """Edit attendance status for a user\nUsage: -editattendance @user DD/MM/YY Batch Name"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
-        batch_names = config.get("batch_names", {})
+        batches_data = load_attendance_batches(guild_id)
+        batch_names = batches_data.get("batch_names", {})
         
         # Find role_id by batch name
         role_id = None
@@ -741,7 +768,8 @@ class Attendance(commands.Cog):
         """Remove a batch from attendance tracking"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
-        batch_names = config.get("batch_names", {})
+        batches_data = load_attendance_batches(guild_id)
+        batch_names = batches_data.get("batch_names", {})
         
         # Find role_id by batch name
         role_id = None
@@ -750,12 +778,12 @@ class Attendance(commands.Cog):
                 role_id = rid
                 break
         
-        if "batches" in config and role_id:
-            if role_id in config["batches"]:
-                config["batches"].remove(role_id)
-                if role_id in config.get("batch_names", {}):
-                    del config["batch_names"][role_id]
-                save_attendance_config(guild_id, config)
+        if role_id:
+            if role_id in batches_data.get("batches", []):
+                batches_data["batches"].remove(role_id)
+                if role_id in batches_data.get("batch_names", {}):
+                    del batches_data["batch_names"][role_id]
+                save_attendance_batches(guild_id, batches_data)
                 
                 embed = discord.Embed(
                     title="✅ BATCH REMOVED",
@@ -782,9 +810,10 @@ class Attendance(commands.Cog):
         """List all configured attendance batches"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         
-        batches = config.get("batches", [])
-        batch_names = config.get("batch_names", {})
+        batches = batches_data.get("batches", [])
+        batch_names = batches_data.get("batch_names", {})
         channel_id = config.get("channel")
         log_channel_id = config.get("log_channel")
         
@@ -830,10 +859,11 @@ class Attendance(commands.Cog):
         guild_id = str(ctx.guild.id)
         attendance_data = load_attendance_data(guild_id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         user_id = str(user.id)
         
-        batches = config.get("batches", [])
-        batch_names = config.get("batch_names", {})
+        batches = batches_data.get("batches", [])
+        batch_names = batches_data.get("batch_names", {})
         
         # Find user's batch
         user_batch_role_id = None
@@ -901,9 +931,10 @@ class Attendance(commands.Cog):
         guild_id = str(ctx.guild.id)
         attendance_data = load_attendance_data(guild_id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         
-        batches = config.get("batches", [])
-        batch_names_config = config.get("batch_names", {})
+        batches = batches_data.get("batches", [])
+        batch_names_config = batches_data.get("batch_names", {})
         
         # Filter by batch name if provided
         if batch_name:
@@ -961,10 +992,11 @@ class Attendance(commands.Cog):
         """Edit user attendance for a date\nUsage: -edituserattendance @user DD/MM/YY present/absent"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         user_id = str(user.id)
         
-        batches = config.get("batches", [])
-        batch_names = config.get("batch_names", {})
+        batches = batches_data.get("batches", [])
+        batch_names = batches_data.get("batch_names", {})
         
         # Find user's batch
         user_batch_role_id = None
@@ -1036,8 +1068,9 @@ class Attendance(commands.Cog):
         """Edit attendance for a specific date with pagination"""
         guild_id = str(ctx.guild.id)
         config = load_attendance_config(guild_id)
+        batches_data = load_attendance_batches(guild_id)
         
-        batches = config.get("batches", [])
+        batches = batches_data.get("batches", [])
         
         if not batches:
             embed = discord.Embed(
