@@ -132,6 +132,9 @@ class Admin(commands.Cog):
         bad = []
         for key, default in checks:
             try:
+                # Ensure key exists even if feature hasn't been configured yet.
+                if not db.has_key(key):
+                    db.set_json(key, default)
                 val = db.get_json(key, default, migrate_file=key)
                 if not isinstance(val, type(default)):
                     bad.append(f"{key} (type)")
