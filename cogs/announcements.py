@@ -8,12 +8,18 @@ import db
 ANNOUNCE_FILE = "scheduled_announcements.json"
 
 
-def _load_json(path, default):
-    return db.get_json(path, default, migrate_file=path)
+def _load_json(guild_id, default):
+    data = db.get_json_scoped(ANNOUNCE_FILE, str(guild_id), default, migrate_file=ANNOUNCE_FILE)
+    if not data or data == default:
+        legacy = db.get_json(ANNOUNCE_FILE, default, migrate_file=ANNOUNCE_FILE)
+        if legacy and legacy != default:
+            db.set_json_scoped(ANNOUNCE_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
 
-def _save_json(path, data):
-    db.set_json(path, data)
+def _save_json(guild_id, data):
+    db.set_json_scoped(ANNOUNCE_FILE, str(guild_id), data)
 
 
 def _utcnow():
@@ -65,47 +71,48 @@ class Announcements(commands.Cog):
 
     @tasks.loop(seconds=20)
     async def announcement_watcher(self):
-        data = _load_json(ANNOUNCE_FILE, {"items": []})
-        items = data.get("items", [])
-        if not items:
-            return
-
         now = _utcnow()
-        changed = False
-        remaining = []
-
-        for item in items:
-            if item.get("sent"):
-                continue
-            try:
-                run_at = _fromiso(item["run_at"])
-            except Exception:
-                continue
-            if run_at > now:
-                remaining.append(item)
+        for guild in self.bot.guilds:
+            data = _load_json(guild.id, {"items": []})
+            items = data.get("items", [])
+            if not items:
                 continue
 
-            channel = self.bot.get_channel(int(item["channel_id"]))
-            if not channel:
+            changed = False
+            remaining = []
+
+            for item in items:
+                if item.get("sent"):
+                    continue
+                try:
+                    run_at = _fromiso(item["run_at"])
+                except Exception:
+                    continue
+                if run_at > now:
+                    remaining.append(item)
+                    continue
+
+                channel = self.bot.get_channel(int(item["channel_id"]))
+                if not channel:
+                    item["sent"] = True
+                    changed = True
+                    continue
+
+                try:
+                    await channel.send(item["content"], allowed_mentions=discord.AllowedMentions.all())
+                except Exception:
+                    # Keep it for retry
+                    remaining.append(item)
+                    continue
+
                 item["sent"] = True
+                item["sent_at"] = _iso(now)
                 changed = True
-                continue
 
-            try:
-                await channel.send(item["content"], allowed_mentions=discord.AllowedMentions.all())
-            except Exception:
-                # Keep it for retry
-                remaining.append(item)
-                continue
-
-            item["sent"] = True
-            item["sent_at"] = _iso(now)
-            changed = True
-
-        # Keep unsent items only (sent items are dropped)
-        if changed:
-            data["items"] = remaining
-            _save_json(ANNOUNCE_FILE, data)
+            # Keep unsent items only (sent items are dropped)
+            if changed:
+                data["items"] = remaining
+                _save_json(guild.id, data)
 
     @announcement_watcher.before_loop
     async def before_announcement_watcher(self):
@@ -133,7 +140,7 @@ class Announcements(commands.Cog):
         if run_at_utc <= _utcnow():
             return await ctx.send("❌ Time must be in the future (PKT).")
 
-        data = _load_json(ANNOUNCE_FILE, {"items": []})
+        data = _load_json(ctx.guild.id, {"items": []})
         next_id = 1
         if data["items"]:
             try:
@@ -152,7 +159,7 @@ class Announcements(commands.Cog):
             "sent": False
         }
         data["items"].append(item)
-        _save_json(ANNOUNCE_FILE, data)
+        _save_json(ctx.guild.id, data)
 
         pkt = run_at_utc.astimezone(pytz.timezone("Asia/Karachi"))
         embed = discord.Embed(
@@ -165,7 +172,7 @@ class Announcements(commands.Cog):
     @announce_group.command(name="list")
     @commands.has_permissions(manage_guild=True)
     async def announce_list(self, ctx):
-        data = _load_json(ANNOUNCE_FILE, {"items": []})
+        data = _load_json(ctx.guild.id, {"items": []})
         items = [i for i in data.get("items", []) if str(i.get("guild_id")) == str(ctx.guild.id) and not i.get("sent")]
         if not items:
             return await ctx.send("📋 No scheduled announcements.")
@@ -190,11 +197,11 @@ class Announcements(commands.Cog):
     @announce_group.command(name="cancel")
     @commands.has_permissions(manage_guild=True)
     async def announce_cancel(self, ctx, ann_id: int):
-        data = _load_json(ANNOUNCE_FILE, {"items": []})
+        data = _load_json(ctx.guild.id, {"items": []})
         before = len(data.get("items", []))
         data["items"] = [i for i in data.get("items", []) if not (str(i.get("guild_id")) == str(ctx.guild.id) and int(i.get("id", 0)) == ann_id)]
         after = len(data.get("items", []))
-        _save_json(ANNOUNCE_FILE, data)
+        _save_json(ctx.guild.id, data)
         if after == before:
             return await ctx.send("❌ Announcement ID not found.")
         await ctx.send("✅ Announcement cancelled.")

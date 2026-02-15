@@ -10,11 +10,17 @@ ATTENDANCE_FILE = "attendance_data.json"
 ATTENDANCE_CONFIG_FILE = "attendance_config.json"
 ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
-def load_json(file):
-    return db.get_json(file, {}, migrate_file=file)
+def load_attendance_data(guild_id: str):
+    return db.get_json_scoped(ATTENDANCE_FILE, guild_id, {}, migrate_file=ATTENDANCE_FILE)
 
-def save_json(file, data):
-    db.set_json(file, data)
+def save_attendance_data(guild_id: str, data: dict):
+    db.set_json_scoped(ATTENDANCE_FILE, guild_id, data)
+
+def load_attendance_config(guild_id: str):
+    return db.get_json_scoped(ATTENDANCE_CONFIG_FILE, guild_id, {}, migrate_file=ATTENDANCE_CONFIG_FILE)
+
+def save_attendance_config(guild_id: str, data: dict):
+    db.set_json_scoped(ATTENDANCE_CONFIG_FILE, guild_id, data)
 
 
 def get_user_day_status(day_data: dict, user_id: str):
@@ -42,6 +48,7 @@ class AttendanceButton(discord.ui.View):
     async def mark_attendance(self, interaction: discord.Interaction, button: discord.ui.Button):
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
+        guild_id = str(interaction.guild.id)
         
         # Check if it's weekend (Saturday=5, Sunday=6)
         if now.weekday() in [5, 6]:
@@ -73,10 +80,9 @@ class AttendanceButton(discord.ui.View):
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         
         # Get config and find user's batch
-        config = load_json(ATTENDANCE_CONFIG_FILE)
-        guild_id = str(interaction.guild.id)
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        config = load_attendance_config(guild_id)
+        batches = config.get("batches", [])
+        batch_names = config.get("batch_names", {})
         
         # Find which batch role the user has
         user_batch_role_id = None
@@ -104,16 +110,15 @@ class AttendanceButton(discord.ui.View):
         today = now.strftime("%d/%m/%y")
         user_id = str(interaction.user.id)
         async with ATTENDANCE_DATA_LOCK:
-            attendance_data = load_json(ATTENDANCE_FILE)
+            attendance_data = load_attendance_data(guild_id)
+            if not isinstance(attendance_data, dict):
+                attendance_data = {}
+            if user_batch_role_id not in attendance_data:
+                attendance_data[user_batch_role_id] = {}
+            if today not in attendance_data[user_batch_role_id]:
+                attendance_data[user_batch_role_id][today] = {}
 
-            if guild_id not in attendance_data:
-                attendance_data[guild_id] = {}
-            if user_batch_role_id not in attendance_data[guild_id]:
-                attendance_data[guild_id][user_batch_role_id] = {}
-            if today not in attendance_data[guild_id][user_batch_role_id]:
-                attendance_data[guild_id][user_batch_role_id][today] = {}
-
-            day_data = attendance_data[guild_id][user_batch_role_id][today]
+            day_data = attendance_data[user_batch_role_id][today]
             current_status, current_time = get_user_day_status(day_data, user_id)
 
             # Students can mark only once per day (cannot switch present/absent later).
@@ -137,15 +142,15 @@ class AttendanceButton(discord.ui.View):
                 return await interaction.response.send_message(embed=embed, ephemeral=True)
 
             # Save attendance status
-            attendance_data[guild_id][user_batch_role_id][today][user_id] = {
+            attendance_data[user_batch_role_id][today][user_id] = {
                 "status": "present",
                 "time": now.strftime("%I:%M %p"),
                 "username": interaction.user.name
             }
-            save_json(ATTENDANCE_FILE, attendance_data)
+            save_attendance_data(guild_id, attendance_data)
         
         # Send log to attendance log channel
-        log_channel_id = config.get(guild_id, {}).get("log_channel")
+        log_channel_id = config.get("log_channel")
         if log_channel_id:
             log_channel = interaction.guild.get_channel(int(log_channel_id))
             if log_channel:
@@ -222,11 +227,11 @@ class EditAttendanceView(discord.ui.View):
         role = guild.get_role(int(batch_role_id))
         
         # Get batch name from config
-        config = load_json(ATTENDANCE_CONFIG_FILE)
-        batch_name = config.get(self.guild_id, {}).get("batch_names", {}).get(batch_role_id, "Unknown Batch")
+        config = load_attendance_config(self.guild_id)
+        batch_name = config.get("batch_names", {}).get(batch_role_id, "Unknown Batch")
         
-        attendance_data = load_json(ATTENDANCE_FILE)
-        batch_data = attendance_data.get(self.guild_id, {}).get(batch_role_id, {}).get(self.date, {})
+        attendance_data = load_attendance_data(self.guild_id)
+        batch_data = attendance_data.get(batch_role_id, {}).get(self.date, {})
         
         # Get all members with this role
         members_list = []
@@ -278,15 +283,18 @@ class Attendance(commands.Cog):
         if now.weekday() in [5, 6]:  # Saturday=5, Sunday=6
             return
         
-        config = load_json(ATTENDANCE_CONFIG_FILE)
-        attendance_data = load_json(ATTENDANCE_FILE)
         today = now.strftime("%d/%m/%y")
         
-        for guild_id, guild_config in config.items():
-            guild = self.bot.get_guild(int(guild_id))
-            if not guild:
+        for guild in self.bot.guilds:
+            guild_id = str(guild.id)
+            guild_config = load_attendance_config(guild_id)
+            if not guild_config:
                 continue
-            
+
+            attendance_data = load_attendance_data(guild_id)
+            if not isinstance(attendance_data, dict):
+                attendance_data = {}
+
             channel_id = guild_config.get("channel")
             log_channel_id = guild_config.get("log_channel")
             
@@ -310,7 +318,7 @@ class Attendance(commands.Cog):
                 # Get batch name
                 batch_name = guild_config.get("batch_names", {}).get(str(batch_role_id), "Unknown Batch")
                 
-                batch_data = attendance_data.get(guild_id, {}).get(str(batch_role_id), {}).get(today, {})
+                batch_data = attendance_data.get(str(batch_role_id), {}).get(today, {})
                 
                 # Build attendance list
                 present_list = []
@@ -409,14 +417,11 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def set_attendance_channel(self, ctx, channel: discord.TextChannel):
         """Set the attendance channel"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         
-        if guild_id not in config:
-            config[guild_id] = {}
-        
-        config[guild_id]["channel"] = str(channel.id)
-        save_json(ATTENDANCE_CONFIG_FILE, config)
+        config["channel"] = str(channel.id)
+        save_attendance_config(guild_id, config)
         
         embed = discord.Embed(
             title="⚙️ ATTENDANCE CHANNEL SET",
@@ -436,14 +441,11 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def set_attendance_log(self, ctx, channel: discord.TextChannel):
         """Set the attendance log channel"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         
-        if guild_id not in config:
-            config[guild_id] = {}
-        
-        config[guild_id]["log_channel"] = str(channel.id)
-        save_json(ATTENDANCE_CONFIG_FILE, config)
+        config["log_channel"] = str(channel.id)
+        save_attendance_config(guild_id, config)
         
         embed = discord.Embed(
             title="⚙️ ATTENDANCE LOG CHANNEL SET",
@@ -463,17 +465,17 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def setup_attendance(self, ctx, channel: discord.TextChannel = None):
         """Setup the attendance embed with button (run once)\nUsage: -setupattendance #channel"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
         
-        if guild_id not in config:
-            config[guild_id] = {"batches": [], "batch_names": {}}
+        config = load_attendance_config(guild_id)
+        if not config:
+            config = {"batches": [], "batch_names": {}}
 
         if channel is not None:
-            config[guild_id]["channel"] = str(channel.id)
-            save_json(ATTENDANCE_CONFIG_FILE, config)
+            config["channel"] = str(channel.id)
+            save_attendance_config(guild_id, config)
 
-        if "channel" not in config[guild_id]:
+        if "channel" not in config:
             embed = discord.Embed(
                 title="❌ ERROR",
                 description="Please provide a channel: `-setupattendance #channel`",
@@ -486,7 +488,7 @@ class Attendance(commands.Cog):
         now = datetime.now(tz)
         
         # Get batch list for display
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        batch_names = config.get("batch_names", {})
         batch_list = "\n".join([f"• {name}" for name in batch_names.values()]) if batch_names else "No batches added yet"
         
         embed = discord.Embed(
@@ -515,15 +517,15 @@ class Attendance(commands.Cog):
         embed.timestamp = now
         
         # Send to attendance channel
-        target_channel = ctx.guild.get_channel(int(config[guild_id]["channel"]))
+        target_channel = ctx.guild.get_channel(int(config["channel"]))
         if not target_channel:
             return await ctx.send("❌ Attendance channel not found. Use `-setupattendance #channel`.")
 
         view = AttendanceButton(self.bot)
         msg = await target_channel.send(embed=embed, view=view)
         
-        config[guild_id]["attendance_message"] = str(msg.id)
-        save_json(ATTENDANCE_CONFIG_FILE, config)
+        config["attendance_message"] = str(msg.id)
+        save_attendance_config(guild_id, config)
         
         response_embed = discord.Embed(
             title="✅ ATTENDANCE SETUP COMPLETE",
@@ -542,26 +544,25 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def add_batch(self, ctx, role: discord.Role, *, batch_name: str):
         """Add a batch to attendance system\nUsage: -addbatch @role Batch Name"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
+        if not config:
+            config = {"batches": [], "batch_names": {}}
         
-        if guild_id not in config:
-            config[guild_id] = {"batches": [], "batch_names": {}}
+        if "batches" not in config:
+            config["batches"] = []
         
-        if "batches" not in config[guild_id]:
-            config[guild_id]["batches"] = []
-        
-        if "batch_names" not in config[guild_id]:
-            config[guild_id]["batch_names"] = {}
+        if "batch_names" not in config:
+            config["batch_names"] = {}
         
         role_id = str(role.id)
-        if role_id not in config[guild_id]["batches"]:
-            config[guild_id]["batches"].append(role_id)
+        if role_id not in config["batches"]:
+            config["batches"].append(role_id)
         
         # Store batch name
-        config[guild_id]["batch_names"][role_id] = batch_name
+        config["batch_names"][role_id] = batch_name
         
-        save_json(ATTENDANCE_CONFIG_FILE, config)
+        save_attendance_config(guild_id, config)
         
         embed = discord.Embed(
             title="✅ BATCH ADDED",
@@ -581,12 +582,12 @@ class Attendance(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def attendance_for(self, ctx, date: str, *, batch_name: str = None):
         """View attendance for a specific date (format: DD/MM/YY)"""
-        attendance_data = load_json(ATTENDANCE_FILE)
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        attendance_data = load_attendance_data(guild_id)
+        config = load_attendance_config(guild_id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        batches = config.get("batches", [])
+        batch_names = config.get("batch_names", {})
         
         # Filter by batch name if provided
         if batch_name:
@@ -609,7 +610,7 @@ class Attendance(commands.Cog):
             # Get batch name
             b_name = batch_names.get(batch_role_id, "Unknown Batch")
             
-            batch_data = attendance_data.get(guild_id, {}).get(batch_role_id, {}).get(date, {})
+            batch_data = attendance_data.get(batch_role_id, {}).get(date, {})
             
             present_list = []
             absent_list = []
@@ -653,10 +654,10 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def edit_attendance_for(self, ctx, date: str):
         """Edit attendance for a specific date with pagination"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
+        batches = config.get("batches", [])
         
         if not batches:
             embed = discord.Embed(
@@ -674,9 +675,9 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def edit_attendance(self, ctx, user: discord.Member, date: str, *, batch_name: str):
         """Edit attendance status for a user\nUsage: -editattendance @user DD/MM/YY Batch Name"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        config = load_attendance_config(guild_id)
+        batch_names = config.get("batch_names", {})
         
         # Find role_id by batch name
         role_id = None
@@ -698,23 +699,23 @@ class Attendance(commands.Cog):
         now = datetime.now(tz)
 
         async with ATTENDANCE_DATA_LOCK:
-            attendance_data = load_json(ATTENDANCE_FILE)
+            attendance_data = load_attendance_data(guild_id)
 
-            if guild_id not in attendance_data:
-                attendance_data[guild_id] = {}
-            if role_id not in attendance_data[guild_id]:
-                attendance_data[guild_id][role_id] = {}
-            if date not in attendance_data[guild_id][role_id]:
-                attendance_data[guild_id][role_id][date] = {}
+            if not isinstance(attendance_data, dict):
+                attendance_data = {}
+            if role_id not in attendance_data:
+                attendance_data[role_id] = {}
+            if date not in attendance_data[role_id]:
+                attendance_data[role_id][date] = {}
 
-            current_status, _ = get_user_day_status(attendance_data[guild_id][role_id][date], user_id)
+            current_status, _ = get_user_day_status(attendance_data[role_id][date], user_id)
             next_status = "absent" if current_status == "present" else "present"
-            attendance_data[guild_id][role_id][date][user_id] = {
+            attendance_data[role_id][date][user_id] = {
                 "status": next_status,
                 "time": now.strftime("%I:%M %p") + " (Manual)",
                 "username": user.name
             }
-            save_json(ATTENDANCE_FILE, attendance_data)
+            save_attendance_data(guild_id, attendance_data)
 
         status = next_status.upper()
         color = 0x2ecc71 if next_status == "present" else 0xe74c3c
@@ -738,9 +739,9 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def remove_batch(self, ctx, *, batch_name: str):
         """Remove a batch from attendance tracking"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        config = load_attendance_config(guild_id)
+        batch_names = config.get("batch_names", {})
         
         # Find role_id by batch name
         role_id = None
@@ -749,12 +750,12 @@ class Attendance(commands.Cog):
                 role_id = rid
                 break
         
-        if guild_id in config and "batches" in config[guild_id] and role_id:
-            if role_id in config[guild_id]["batches"]:
-                config[guild_id]["batches"].remove(role_id)
-                if role_id in config[guild_id].get("batch_names", {}):
-                    del config[guild_id]["batch_names"][role_id]
-                save_json(ATTENDANCE_CONFIG_FILE, config)
+        if "batches" in config and role_id:
+            if role_id in config["batches"]:
+                config["batches"].remove(role_id)
+                if role_id in config.get("batch_names", {}):
+                    del config["batch_names"][role_id]
+                save_attendance_config(guild_id, config)
                 
                 embed = discord.Embed(
                     title="✅ BATCH REMOVED",
@@ -779,13 +780,13 @@ class Attendance(commands.Cog):
     @commands.command(name="listbatches", aliases=["lb", "batches"])
     async def list_batches(self, ctx):
         """List all configured attendance batches"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
-        channel_id = config.get(guild_id, {}).get("channel")
-        log_channel_id = config.get(guild_id, {}).get("log_channel")
+        batches = config.get("batches", [])
+        batch_names = config.get("batch_names", {})
+        channel_id = config.get("channel")
+        log_channel_id = config.get("log_channel")
         
         if not batches:
             embed = discord.Embed(
@@ -826,13 +827,13 @@ class Attendance(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def show_user_attendance(self, ctx, user: discord.Member):
         """Show attendance history of a user"""
-        attendance_data = load_json(ATTENDANCE_FILE)
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        attendance_data = load_attendance_data(guild_id)
+        config = load_attendance_config(guild_id)
         user_id = str(user.id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        batches = config.get("batches", [])
+        batch_names = config.get("batch_names", {})
         
         # Find user's batch
         user_batch_role_id = None
@@ -854,7 +855,7 @@ class Attendance(commands.Cog):
             return await ctx.send(embed=embed)
         
         # Get attendance records
-        user_attendance = attendance_data.get(guild_id, {}).get(user_batch_role_id, {})
+        user_attendance = attendance_data.get(user_batch_role_id, {})
         
         # Count present days
         present_count = 0
@@ -897,12 +898,12 @@ class Attendance(commands.Cog):
     @commands.has_permissions(manage_messages=True)
     async def attendance_for_date(self, ctx, date: str, *, batch_name: str = None):
         """View attendance for a specific date\nUsage: -attendancefordate DD/MM/YY [Batch Name]"""
-        attendance_data = load_json(ATTENDANCE_FILE)
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        attendance_data = load_attendance_data(guild_id)
+        config = load_attendance_config(guild_id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names_config = config.get(guild_id, {}).get("batch_names", {})
+        batches = config.get("batches", [])
+        batch_names_config = config.get("batch_names", {})
         
         # Filter by batch name if provided
         if batch_name:
@@ -922,7 +923,7 @@ class Attendance(commands.Cog):
                 continue
             
             b_name = batch_names_config.get(batch_role_id, "Unknown Batch")
-            batch_data = attendance_data.get(guild_id, {}).get(batch_role_id, {}).get(date, {})
+            batch_data = attendance_data.get(batch_role_id, {}).get(date, {})
             
             present_list = []
             absent_list = []
@@ -958,12 +959,12 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def edit_user_attendance(self, ctx, user: discord.Member, date: str, status: str):
         """Edit user attendance for a date\nUsage: -edituserattendance @user DD/MM/YY present/absent"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         user_id = str(user.id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
-        batch_names = config.get(guild_id, {}).get("batch_names", {})
+        batches = config.get("batches", [])
+        batch_names = config.get("batch_names", {})
         
         # Find user's batch
         user_batch_role_id = None
@@ -996,21 +997,21 @@ class Attendance(commands.Cog):
             return await ctx.send(embed=embed)
 
         async with ATTENDANCE_DATA_LOCK:
-            attendance_data = load_json(ATTENDANCE_FILE)
+            attendance_data = load_attendance_data(guild_id)
 
-            if guild_id not in attendance_data:
-                attendance_data[guild_id] = {}
-            if user_batch_role_id not in attendance_data[guild_id]:
-                attendance_data[guild_id][user_batch_role_id] = {}
-            if date not in attendance_data[guild_id][user_batch_role_id]:
-                attendance_data[guild_id][user_batch_role_id][date] = {}
+            if not isinstance(attendance_data, dict):
+                attendance_data = {}
+            if user_batch_role_id not in attendance_data:
+                attendance_data[user_batch_role_id] = {}
+            if date not in attendance_data[user_batch_role_id]:
+                attendance_data[user_batch_role_id][date] = {}
 
-            attendance_data[guild_id][user_batch_role_id][date][user_id] = {
+            attendance_data[user_batch_role_id][date][user_id] = {
                 "status": status.lower(),
                 "time": now.strftime("%I:%M %p") + " (Manual)",
                 "username": user.name
             }
-            save_json(ATTENDANCE_FILE, attendance_data)
+            save_attendance_data(guild_id, attendance_data)
 
         color = 0x2ecc71 if status.lower() == "present" else 0xe74c3c
         
@@ -1033,10 +1034,10 @@ class Attendance(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def edit_attendance_for_date(self, ctx, date: str):
         """Edit attendance for a specific date with pagination"""
-        config = load_json(ATTENDANCE_CONFIG_FILE)
         guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
         
-        batches = config.get(guild_id, {}).get("batches", [])
+        batches = config.get("batches", [])
         
         if not batches:
             embed = discord.Embed(

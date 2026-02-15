@@ -7,12 +7,21 @@ import db
 AUDIT_CONFIG_FILE = "audit_log_config.json"
 
 
-def _load_json(path, default):
-    return db.get_json(path, default, migrate_file=path)
+def _load_json(guild_id, default):
+    data = db.get_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), default, migrate_file=AUDIT_CONFIG_FILE)
+    if not data:
+        legacy = db.get_json(AUDIT_CONFIG_FILE, {}, migrate_file=AUDIT_CONFIG_FILE)
+        if isinstance(legacy, dict):
+            legacy_val = legacy.get(str(guild_id))
+            if legacy_val:
+                migrated = {"channel_id": legacy_val}
+                db.set_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), migrated)
+                return migrated
+    return data
 
 
-def _save_json(path, data):
-    db.set_json(path, data)
+def _save_json(guild_id, data):
+    db.set_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), data)
 
 
 def _truncate(s: str, n: int = 900) -> str:
@@ -60,8 +69,8 @@ class AuditLog(commands.Cog):
             self._cache.popitem(last=False)
 
     def _get_log_channel(self, guild: discord.Guild):
-        cfg = _load_json(AUDIT_CONFIG_FILE, {})
-        ch_id = cfg.get(str(guild.id))
+        cfg = _load_json(guild.id, {})
+        ch_id = cfg.get("channel_id")
         if not ch_id:
             return None
         try:
@@ -92,9 +101,9 @@ class AuditLog(commands.Cog):
     @commands.command(name="setauditlog", aliases=["auditset", "auditlogset"])
     @commands.has_permissions(administrator=True)
     async def set_audit_log(self, ctx, channel: discord.TextChannel):
-        cfg = _load_json(AUDIT_CONFIG_FILE, {})
-        cfg[str(ctx.guild.id)] = channel.id
-        _save_json(AUDIT_CONFIG_FILE, cfg)
+        cfg = _load_json(ctx.guild.id, {})
+        cfg["channel_id"] = channel.id
+        _save_json(ctx.guild.id, cfg)
 
         embed = discord.Embed(
             title="✅ AUDIT LOG ENABLED",
@@ -106,10 +115,10 @@ class AuditLog(commands.Cog):
     @commands.command(name="auditlogoff", aliases=["setauditoff", "auditoff"])
     @commands.has_permissions(administrator=True)
     async def audit_log_off(self, ctx):
-        cfg = _load_json(AUDIT_CONFIG_FILE, {})
-        if str(ctx.guild.id) in cfg:
-            del cfg[str(ctx.guild.id)]
-            _save_json(AUDIT_CONFIG_FILE, cfg)
+        cfg = _load_json(ctx.guild.id, {})
+        if "channel_id" in cfg:
+            del cfg["channel_id"]
+            _save_json(ctx.guild.id, cfg)
         await ctx.send("✅ Audit log disabled.")
 
     @commands.Cog.listener()

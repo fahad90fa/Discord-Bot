@@ -9,7 +9,7 @@ from .utils import load_data, send_modlog, is_owner_check
 
 def is_admin_or_owner():
     async def predicate(ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         return ctx.author.id in data["owners"] or ctx.author.id in data["admins"]
     return commands.check(predicate)
 

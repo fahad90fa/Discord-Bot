@@ -4,8 +4,9 @@ import re
 from datetime import timedelta
 from collections import defaultdict
 from .utils import (
-    load_json, save_json, AFK_FILE, 
-    get_antilink_config, load_data, 
+    load_afk, save_afk,
+    load_json_guild, save_json_guild,
+    get_antilink_config, load_data,
     get_antispam_config, get_automod_config
 )
 
@@ -26,13 +27,9 @@ class Events(commands.Cog):
         if member.bot:
             return
             
-        welcome_config = load_json(WELCOME_FILE)
         guild_id = str(member.guild.id)
-        
-        if guild_id not in welcome_config:
-            return
-            
-        channel_id = welcome_config[guild_id].get("channel")
+        welcome_config = load_json_guild(WELCOME_FILE, guild_id, {})
+        channel_id = welcome_config.get("channel")
         if not channel_id:
             return
             
@@ -114,14 +111,11 @@ class Events(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def set_welcome_channel(self, ctx, channel: discord.TextChannel = None):
         """Set the welcome channel for new members"""
-        welcome_config = load_json(WELCOME_FILE)
         guild_id = str(ctx.guild.id)
         
         if channel is None:
             # Disable welcome messages
-            if guild_id in welcome_config:
-                del welcome_config[guild_id]
-                save_json(WELCOME_FILE, welcome_config)
+            save_json_guild(WELCOME_FILE, guild_id, {})
                 
             embed = discord.Embed(
                 title="⚙️ WELCOME SYSTEM",
@@ -135,8 +129,7 @@ class Events(commands.Cog):
             )
         else:
             # Enable welcome messages for the specified channel
-            welcome_config[guild_id] = {"channel": str(channel.id)}
-            save_json(WELCOME_FILE, welcome_config)
+            save_json_guild(WELCOME_FILE, guild_id, {"channel": str(channel.id)})
             
             embed = discord.Embed(
                 title="⚙️ WELCOME SYSTEM",
@@ -162,7 +155,7 @@ class Events(commands.Cog):
         # Get bot prefix to check if message is a command
         ctx = await self.bot.get_context(message)
         
-        afk_data = load_json(AFK_FILE)
+        afk_data = load_afk(message.guild.id if message.guild else None)
         author_id = str(message.author.id)
         
         # Check if user returning from AFK (but not if they're using the afk command)
@@ -172,7 +165,7 @@ class Events(commands.Cog):
                 return
             
             del afk_data[author_id]
-            save_json(AFK_FILE, afk_data)
+            save_afk(afk_data, message.guild.id if message.guild else None)
             
             embed = discord.Embed(
                 title="🌐 CONNECTION RESTORED",
@@ -210,7 +203,7 @@ class Events(commands.Cog):
             am_config = get_automod_config(message.guild.id)
             bypass_role_id = am_config.get("bypass_role")
             
-            mod_data = load_data()
+            mod_data = load_data(message.guild.id)
             is_bypassed = (
                 message.author.id in mod_data.get("owners", []) or 
                 message.author.id in mod_data.get("admins", []) or 

@@ -20,95 +20,159 @@ def load_json(filename):
 def save_json(filename, data):
     db.set_json(filename, data)
 
-def load_afk():
-    return load_json(AFK_FILE)
+def load_json_guild(filename, guild_id, default=None):
+    if default is None:
+        default = {}
+    return db.get_json_scoped(filename, str(guild_id), default, migrate_file=filename)
 
-def save_afk(data):
-    save_json(AFK_FILE, data)
+def save_json_guild(filename, guild_id, data):
+    db.set_json_scoped(filename, str(guild_id), data)
 
-def load_ban_limits():
-    return load_json(BAN_LIMIT_FILE)
+def load_afk(guild_id=None):
+    if guild_id is None:
+        return load_json(AFK_FILE)
+    data = load_json_guild(AFK_FILE, guild_id, {})
+    if not data:
+        legacy = load_json(AFK_FILE)
+        if isinstance(legacy, dict) and legacy:
+            save_json_guild(AFK_FILE, guild_id, legacy)
+            return legacy
+    return data
 
-def save_ban_limits(data):
-    save_json(BAN_LIMIT_FILE, data)
+def save_afk(data, guild_id=None):
+    if guild_id is None:
+        return save_json(AFK_FILE, data)
+    return save_json_guild(AFK_FILE, guild_id, data)
 
-def load_data():
-    return load_json(FILE)
+def load_ban_limits(guild_id=None):
+    if guild_id is None:
+        return load_json(BAN_LIMIT_FILE)
+    data = load_json_guild(BAN_LIMIT_FILE, guild_id, {})
+    if not data:
+        legacy = load_json(BAN_LIMIT_FILE)
+        if isinstance(legacy, dict) and legacy:
+            save_json_guild(BAN_LIMIT_FILE, guild_id, legacy)
+            return legacy
+    return data
 
-def save_data(data):
-    save_json(FILE, data)
+def save_ban_limits(data, guild_id=None):
+    if guild_id is None:
+        return save_json(BAN_LIMIT_FILE, data)
+    return save_json_guild(BAN_LIMIT_FILE, guild_id, data)
+
+def load_data(guild_id=None):
+    if guild_id is None:
+        return load_json(FILE)
+    data = load_json_guild(FILE, guild_id, {"owners": [], "admins": [], "mods": []})
+    if data == {"owners": [], "admins": [], "mods": []}:
+        legacy = load_json(FILE)
+        if isinstance(legacy, dict) and legacy:
+            save_json_guild(FILE, guild_id, legacy)
+            return legacy
+    return data
+
+def save_data(data, guild_id=None):
+    if guild_id is None:
+        return save_json(FILE, data)
+    return save_json_guild(FILE, guild_id, data)
 
 def get_modlog_channel(guild_id):
-    data = load_json(MODLOG_FILE)
-    return data.get(str(guild_id))
+    data = load_json_guild(MODLOG_FILE, guild_id, {})
+    return data.get("channel_id")
 
 def set_modlog_channel(guild_id, channel_id):
-    data = load_json(MODLOG_FILE)
-    data[str(guild_id)] = channel_id
-    save_json(MODLOG_FILE, data)
+    save_json_guild(MODLOG_FILE, guild_id, {"channel_id": channel_id})
 
 from discord.ext import commands
 
 def is_owner_check():
     async def predicate(ctx):
-        data = load_json(FILE)
+        guild_id = ctx.guild.id if ctx.guild else None
+        data = load_data(guild_id) if guild_id else load_data()
         # Accept either "owners" list in config or bot.owner_ids (ctx.bot.is_owner).
         return ctx.author.id in data.get("owners", []) or await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
 def get_news_channel():
-    data = load_json(NEWS_CONFIG_FILE)
-    return data.get("news_channel")
+    raise RuntimeError("get_news_channel now requires guild_id")
 
 def set_news_channel(channel_id):
-    data = load_json(NEWS_CONFIG_FILE)
-    data["news_channel"] = channel_id
-    save_json(NEWS_CONFIG_FILE, data)
+    raise RuntimeError("set_news_channel now requires guild_id")
 
 def get_reminder_channel():
-    data = load_json(NEWS_CONFIG_FILE)
-    return data.get("reminder_channel")
+    raise RuntimeError("get_reminder_channel now requires guild_id")
 
 def set_reminder_channel(channel_id):
-    data = load_json(NEWS_CONFIG_FILE)
+    raise RuntimeError("set_reminder_channel now requires guild_id")
+
+def get_news_channel_guild(guild_id):
+    data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
+    if "news_channel" in data:
+        return data.get("news_channel")
+    # Legacy global schema migration
+    legacy = db.get_json(NEWS_CONFIG_FILE, {}, migrate_file=NEWS_CONFIG_FILE)
+    if isinstance(legacy, dict) and legacy.get("news_channel"):
+        data["news_channel"] = legacy.get("news_channel")
+        if legacy.get("reminder_channel"):
+            data["reminder_channel"] = legacy.get("reminder_channel")
+        save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
+        return data.get("news_channel")
+    return None
+
+def set_news_channel_guild(guild_id, channel_id):
+    data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
+    data["news_channel"] = channel_id
+    save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
+
+def get_reminder_channel_guild(guild_id):
+    data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
+    if "reminder_channel" in data:
+        return data.get("reminder_channel")
+    # Legacy global schema migration
+    legacy = db.get_json(NEWS_CONFIG_FILE, {}, migrate_file=NEWS_CONFIG_FILE)
+    if isinstance(legacy, dict) and legacy.get("reminder_channel"):
+        data["reminder_channel"] = legacy.get("reminder_channel")
+        if legacy.get("news_channel"):
+            data["news_channel"] = legacy.get("news_channel")
+        save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
+        return data.get("reminder_channel")
+    return None
+
+def set_reminder_channel_guild(guild_id, channel_id):
+    data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
     data["reminder_channel"] = channel_id
-    save_json(NEWS_CONFIG_FILE, data)
+    save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
 
 def get_antilink_config(guild_id):
-    data = load_json(ANTILINK_FILE)
-    return data.get(str(guild_id), {"enabled": False, "punishment": "mute", "duration": 60})
+    data = load_json_guild(ANTILINK_FILE, guild_id, {"enabled": False, "punishment": "mute", "duration": 60})
+    return data
 
 def set_antilink_config(guild_id, **kwargs):
-    data = load_json(ANTILINK_FILE)
-    guild_data = data.get(str(guild_id), {"enabled": False, "punishment": "mute", "duration": 60})
+    guild_data = load_json_guild(ANTILINK_FILE, guild_id, {"enabled": False, "punishment": "mute", "duration": 60})
     for key, value in kwargs.items():
         guild_data[key] = value
-    data[str(guild_id)] = guild_data
-    save_json(ANTILINK_FILE, data)
+    save_json_guild(ANTILINK_FILE, guild_id, guild_data)
 
 def get_antispam_config(guild_id):
-    data = load_json(ANTISPAM_FILE)
-    return data.get(str(guild_id), {"enabled": False, "punishment": "mute", "duration": 60, "limit": 4})
+    data = load_json_guild(ANTISPAM_FILE, guild_id, {"enabled": False, "punishment": "mute", "duration": 60, "limit": 4})
+    return data
 
 def set_antispam_config(guild_id, **kwargs):
-    data = load_json(ANTISPAM_FILE)
-    guild_data = data.get(str(guild_id), {"enabled": False, "punishment": "mute", "duration": 60, "limit": 4})
+    guild_data = load_json_guild(ANTISPAM_FILE, guild_id, {"enabled": False, "punishment": "mute", "duration": 60, "limit": 4})
     for key, value in kwargs.items():
         guild_data[key] = value
-    data[str(guild_id)] = guild_data
-    save_json(ANTISPAM_FILE, data)
+    save_json_guild(ANTISPAM_FILE, guild_id, guild_data)
 
 def get_automod_config(guild_id):
-    data = load_json(AUTOMOD_FILE)
-    return data.get(str(guild_id), {
+    data = load_json_guild(AUTOMOD_FILE, guild_id, {
         "anticaps": {"enabled": False, "punishment": "mute", "duration": 10, "ratio": 0.5, "min_len": 5},
         "antiemoji": {"enabled": False, "punishment": "mute", "duration": 10, "limit": 5},
         "bypass_role": None
     })
+    return data
 
 def set_automod_config(guild_id, key, value):
-    data = load_json(AUTOMOD_FILE)
-    guild_data = data.get(str(guild_id), {
+    guild_data = load_json_guild(AUTOMOD_FILE, guild_id, {
         "anticaps": {"enabled": False, "punishment": "mute", "duration": 10, "ratio": 0.5, "min_len": 5},
         "antiemoji": {"enabled": False, "punishment": "mute", "duration": 10, "limit": 5},
         "bypass_role": None
@@ -120,8 +184,7 @@ def set_automod_config(guild_id, key, value):
     else:
         guild_data[key] = value
         
-    data[str(guild_id)] = guild_data
-    save_json(AUTOMOD_FILE, data)
+    save_json_guild(AUTOMOD_FILE, guild_id, guild_data)
 
 async def send_modlog(bot, ctx, action: str, target=None, **kwargs):
     modlog_id = get_modlog_channel(ctx.guild.id)

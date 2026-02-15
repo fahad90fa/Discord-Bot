@@ -14,60 +14,79 @@ MANAGERS_FILE = "union_managers.json"
 LB_CONFIG_FILE = "leaderboard_config.json"
 LOG_CHANNEL_FILE = "log_channel.json"
 
-def load_json(file_path, default=None):
-    """Load JSON data from file"""
-    if default is None:
-        default = {}
-    return db.get_json(file_path, default, migrate_file=file_path)
-
-def save_json(file_path, data):
-    """Save JSON data to file"""
-    db.set_json(file_path, data)
-
-def get_points():
+def get_points(guild_id):
     """Load points data"""
-    return load_json(POINTS_FILE, {})
+    data = db.get_json_scoped(POINTS_FILE, str(guild_id), {}, migrate_file=POINTS_FILE)
+    if not data:
+        legacy = db.get_json(POINTS_FILE, {}, migrate_file=POINTS_FILE)
+        if isinstance(legacy, dict) and legacy:
+            db.set_json_scoped(POINTS_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
-def save_points(data):
+def save_points(guild_id, data):
     """Save points data"""
-    save_json(POINTS_FILE, data)
+    db.set_json_scoped(POINTS_FILE, str(guild_id), data)
 
-def get_logs():
+def get_logs(guild_id):
     """Load logs data"""
-    return load_json(LOGS_FILE, [])
+    data = db.get_json_scoped(LOGS_FILE, str(guild_id), [], migrate_file=LOGS_FILE)
+    if not data:
+        legacy = db.get_json(LOGS_FILE, [], migrate_file=LOGS_FILE)
+        if isinstance(legacy, list) and legacy:
+            db.set_json_scoped(LOGS_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
-def save_logs(data):
+def save_logs(guild_id, data):
     """Save logs data"""
-    save_json(LOGS_FILE, data)
+    db.set_json_scoped(LOGS_FILE, str(guild_id), data)
 
-def get_managers():
+def get_managers(guild_id):
     """Load manager list"""
-    return load_json(MANAGERS_FILE, [])
+    data = db.get_json_scoped(MANAGERS_FILE, str(guild_id), [], migrate_file=MANAGERS_FILE)
+    if not data:
+        legacy = db.get_json(MANAGERS_FILE, [], migrate_file=MANAGERS_FILE)
+        if isinstance(legacy, list) and legacy:
+            db.set_json_scoped(MANAGERS_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
-def save_managers(data):
+def save_managers(guild_id, data):
     """Save manager list"""
-    save_json(MANAGERS_FILE, data)
+    db.set_json_scoped(MANAGERS_FILE, str(guild_id), data)
 
-def get_lb_config():
+def get_lb_config(guild_id):
     """Load leaderboard config"""
-    return load_json(LB_CONFIG_FILE, {})
+    data = db.get_json_scoped(LB_CONFIG_FILE, str(guild_id), {}, migrate_file=LB_CONFIG_FILE)
+    if not data:
+        legacy = db.get_json(LB_CONFIG_FILE, {}, migrate_file=LB_CONFIG_FILE)
+        if isinstance(legacy, dict) and legacy:
+            db.set_json_scoped(LB_CONFIG_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
-def save_lb_config(data):
+def save_lb_config(guild_id, data):
     """Save leaderboard config"""
-    save_json(LB_CONFIG_FILE, data)
+    db.set_json_scoped(LB_CONFIG_FILE, str(guild_id), data)
 
-def get_log_channel():
+def get_log_channel(guild_id):
     """Get log channel ID"""
-    config = load_json(LOG_CHANNEL_FILE, {})
+    config = db.get_json_scoped(LOG_CHANNEL_FILE, str(guild_id), {}, migrate_file=LOG_CHANNEL_FILE)
+    if not config:
+        legacy = db.get_json(LOG_CHANNEL_FILE, {}, migrate_file=LOG_CHANNEL_FILE)
+        if isinstance(legacy, dict) and legacy:
+            db.set_json_scoped(LOG_CHANNEL_FILE, str(guild_id), legacy)
+            config = legacy
     return config.get("channel_id")
 
-def set_log_channel(channel_id):
+def set_log_channel(guild_id, channel_id):
     """Set log channel ID"""
-    save_json(LOG_CHANNEL_FILE, {"channel_id": channel_id})
+    db.set_json_scoped(LOG_CHANNEL_FILE, str(guild_id), {"channel_id": channel_id})
 
-def log_action(manager_id, manager_name, action, target_id, target_name, points, reason):
+def log_action(guild_id, manager_id, manager_name, action, target_id, target_name, points, reason):
     """Log manager action"""
-    logs = get_logs()
+    logs = get_logs(guild_id)
     pkt_time = datetime.now(pytz.timezone('Asia/Karachi'))
     
     log_entry = {
@@ -82,12 +101,12 @@ def log_action(manager_id, manager_name, action, target_id, target_name, points,
     }
     
     logs.append(log_entry)
-    save_logs(logs)
+    save_logs(guild_id, logs)
     return log_entry
 
-async def send_log_to_channel(bot, log_entry):
+async def send_log_to_channel(bot, guild_id, log_entry):
     """Send log entry to configured channel"""
-    log_channel_id = get_log_channel()
+    log_channel_id = get_log_channel(guild_id)
     
     if not log_channel_id:
         return
@@ -132,7 +151,7 @@ async def send_log_to_channel(bot, log_entry):
 def is_manager_or_owner():
     """Check if user is manager or owner"""
     async def predicate(ctx):
-        managers = get_managers()
+        managers = get_managers(ctx.guild.id)
         return ctx.author.id in managers or await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
@@ -157,9 +176,9 @@ async def resolve_username(bot, guild, user_id, fallback_name="Unknown User"):
     except Exception:
         return fallback_name
 
-async def update_leaderboard_message(bot):
+async def update_leaderboard_message(bot, guild_id):
     """Update the pinned leaderboard message"""
-    lb_config = get_lb_config()
+    lb_config = get_lb_config(guild_id)
     
     if not lb_config.get("channel_id") or not lb_config.get("message_id"):
         return
@@ -174,7 +193,7 @@ async def update_leaderboard_message(bot):
             return
         
         # Create updated leaderboard embed
-        points_data = get_points()
+        points_data = get_points(guild_id)
         points_data = {
             user_id: data
             for user_id, data in points_data.items()
@@ -246,7 +265,7 @@ class UnionPoints(commands.Cog):
             return await ctx.send("❌ Points must be positive!")
         
         # Load points
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         user_id = str(member.id)
         
         # Update points
@@ -264,10 +283,11 @@ class UnionPoints(commands.Cog):
         points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
         
-        save_points(points_data)
+        save_points(ctx.guild.id, points_data)
         
         # Log action
         log_entry = log_action(
+            ctx.guild.id,
             ctx.author.id,
             ctx.author.display_name,
             "ADD",
@@ -278,7 +298,7 @@ class UnionPoints(commands.Cog):
         )
         
         # Send log to channel
-        await send_log_to_channel(self.bot, log_entry)
+        await send_log_to_channel(self.bot, ctx.guild.id, log_entry)
         
         # Send confirmation
         embed = discord.Embed(
@@ -294,7 +314,7 @@ class UnionPoints(commands.Cog):
         await ctx.send(embed=embed)
         
         # Update live leaderboard
-        await update_leaderboard_message(self.bot)
+        await update_leaderboard_message(self.bot, ctx.guild.id)
 
     @union.command(name="remove")
     @is_owner_check()
@@ -304,7 +324,7 @@ class UnionPoints(commands.Cog):
             return await ctx.send("❌ Points must be positive!")
         
         # Load points
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         user_id = str(member.id)
         
         if user_id not in points_data:
@@ -316,10 +336,11 @@ class UnionPoints(commands.Cog):
         points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
         
-        save_points(points_data)
+        save_points(ctx.guild.id, points_data)
         
         # Log action
         log_entry = log_action(
+            ctx.guild.id,
             ctx.author.id,
             ctx.author.display_name,
             "REMOVE",
@@ -330,7 +351,7 @@ class UnionPoints(commands.Cog):
         )
         
         # Send log to channel
-        await send_log_to_channel(self.bot, log_entry)
+        await send_log_to_channel(self.bot, ctx.guild.id, log_entry)
         
         # Send confirmation
         embed = discord.Embed(
@@ -346,7 +367,7 @@ class UnionPoints(commands.Cog):
         await ctx.send(embed=embed)
         
         # Update live leaderboard
-        await update_leaderboard_message(self.bot)
+        await update_leaderboard_message(self.bot, ctx.guild.id)
 
     @union.group(name="reset", invoke_without_command=True)
     @is_owner_check()
@@ -355,7 +376,7 @@ class UnionPoints(commands.Cog):
         if member is None or reason is None:
             return await ctx.send("Usage: `union reset @member <reason>` or `union reset all <reason>`")
 
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         user_id = str(member.id)
 
         if user_id not in points_data:
@@ -367,9 +388,10 @@ class UnionPoints(commands.Cog):
         points_data[user_id]["username"] = member.name
         points_data[user_id]["last_updated"] = datetime.now(pytz.timezone('Asia/Karachi')).isoformat()
 
-        save_points(points_data)
+        save_points(ctx.guild.id, points_data)
 
         log_entry = log_action(
+            ctx.guild.id,
             ctx.author.id,
             ctx.author.display_name,
             "RESET",
@@ -379,7 +401,7 @@ class UnionPoints(commands.Cog):
             reason
         )
 
-        await send_log_to_channel(self.bot, log_entry)
+        await send_log_to_channel(self.bot, ctx.guild.id, log_entry)
 
         embed = discord.Embed(
             title="🔄 POINTS RESET",
@@ -392,13 +414,13 @@ class UnionPoints(commands.Cog):
         embed.set_footer(text=f"Action by {ctx.author.display_name} • {datetime.now(pytz.timezone('Asia/Karachi')).strftime('%I:%M %p PKT')}")
 
         await ctx.send(embed=embed)
-        await update_leaderboard_message(self.bot)
+        await update_leaderboard_message(self.bot, ctx.guild.id)
 
     @reset_points.command(name="all")
     @is_owner_check()
     async def reset_all_points(self, ctx, *, reason: str):
         """Reset all tracked users to 0 points"""
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         if not points_data:
             return await ctx.send("❌ No points data to reset.")
 
@@ -412,6 +434,7 @@ class UnionPoints(commands.Cog):
             reset_count += 1
 
             log_entry = log_action(
+                ctx.guild.id,
                 ctx.author.id,
                 ctx.author.display_name,
                 "RESET",
@@ -420,10 +443,10 @@ class UnionPoints(commands.Cog):
                 old_points,
                 reason
             )
-            await send_log_to_channel(self.bot, log_entry)
+            await send_log_to_channel(self.bot, ctx.guild.id, log_entry)
 
-        save_points(points_data)
-        await update_leaderboard_message(self.bot)
+        save_points(ctx.guild.id, points_data)
+        await update_leaderboard_message(self.bot, ctx.guild.id)
 
         embed = discord.Embed(
             title="🔄 ALL UNION POINTS RESET",
@@ -438,7 +461,7 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def leaderboard(self, ctx):
         """Show the Union Points leaderboard"""
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         points_data = {
             user_id: data
             for user_id, data in points_data.items()
@@ -492,7 +515,7 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def show_logs(self, ctx, limit: int = 10):
         """Show recent manager action logs (Manager/Owner only)"""
-        logs = get_logs()
+        logs = get_logs(ctx.guild.id)
         
         if not logs:
             return await ctx.send("📋 No logs available!")
@@ -536,13 +559,13 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def add_manager(self, ctx, member: discord.Member):
         """Add a union points manager (Owner only)"""
-        managers = get_managers()
+        managers = get_managers(ctx.guild.id)
         
         if member.id in managers:
             return await ctx.send(f"⚠️ **{member.display_name}** is already a manager!")
         
         managers.append(member.id)
-        save_managers(managers)
+        save_managers(ctx.guild.id, managers)
         
         embed = discord.Embed(
             title="✅ MANAGER ADDED",
@@ -557,13 +580,13 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def remove_manager(self, ctx, member: discord.Member):
         """Remove a union points manager (Owner only)"""
-        managers = get_managers()
+        managers = get_managers(ctx.guild.id)
         
         if member.id not in managers:
             return await ctx.send(f"⚠️ **{member.display_name}** is not a manager!")
         
         managers.remove(member.id)
-        save_managers(managers)
+        save_managers(ctx.guild.id, managers)
         
         embed = discord.Embed(
             title="❌ MANAGER REMOVED",
@@ -578,7 +601,7 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def list_managers(self, ctx):
         """List all union points managers"""
-        managers = get_managers()
+        managers = get_managers(ctx.guild.id)
         
         if not managers:
             return await ctx.send("📋 No managers assigned yet!")
@@ -606,7 +629,7 @@ class UnionPoints(commands.Cog):
     @is_owner_check()
     async def set_log_channel_cmd(self, ctx, channel: discord.TextChannel):
         """Setup auto-logging channel (Owner only)"""
-        set_log_channel(channel.id)
+        set_log_channel(ctx.guild.id, channel.id)
         
         embed = discord.Embed(
             title="✅ LOG CHANNEL CONFIGURED",
@@ -633,7 +656,7 @@ class UnionPoints(commands.Cog):
         await asyncio.sleep(0.5)
         
         # Create initial leaderboard embed
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         points_data = {
             user_id: data
             for user_id, data in points_data.items()
@@ -701,7 +724,7 @@ class UnionPoints(commands.Cog):
             "channel_id": channel.id,
             "message_id": lb_message.id
         }
-        save_lb_config(lb_config)
+        save_lb_config(ctx.guild.id, lb_config)
         
         await load_msg.edit(content="✅ `LIVE LEADERBOARD ACTIVATED!`")
         await asyncio.sleep(1)
@@ -731,7 +754,7 @@ class UnionPoints(commands.Cog):
         if member is None:
             member = ctx.author
         
-        points_data = get_points()
+        points_data = get_points(ctx.guild.id)
         user_id = str(member.id)
         
         if user_id not in points_data:

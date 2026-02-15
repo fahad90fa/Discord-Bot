@@ -220,9 +220,9 @@ class General(commands.Cog):
         if "@everyone" in reason or "@here" in reason or "<@&" in reason:
             return await ctx.send("apni dalali apne ghar dekhye")
             
-        afk_data = load_afk()
+        afk_data = load_afk(ctx.guild.id)
         afk_data[str(ctx.author.id)] = reason
-        save_afk(afk_data)
+        save_afk(afk_data, ctx.guild.id)
         
         embed = discord.Embed(
             title="🛰️ AFK PROTOCOL ACTIVATED",

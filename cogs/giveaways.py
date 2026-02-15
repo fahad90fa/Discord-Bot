@@ -9,12 +9,18 @@ import db
 GIVEAWAYS_FILE = "giveaways.json"
 
 
-def _load_json(path, default):
-    return db.get_json(path, default, migrate_file=path)
+def _load_json(guild_id, default):
+    data = db.get_json_scoped(GIVEAWAYS_FILE, str(guild_id), default, migrate_file=GIVEAWAYS_FILE)
+    if not data or data == default:
+        legacy = db.get_json(GIVEAWAYS_FILE, default, migrate_file=GIVEAWAYS_FILE)
+        if legacy and legacy != default:
+            db.set_json_scoped(GIVEAWAYS_FILE, str(guild_id), legacy)
+            return legacy
+    return data
 
 
-def _save_json(path, data):
-    db.set_json(path, data)
+def _save_json(guild_id, data):
+    db.set_json_scoped(GIVEAWAYS_FILE, str(guild_id), data)
 
 
 def parse_duration(s: str) -> int:
@@ -117,34 +123,35 @@ class Giveaways(commands.Cog):
 
     @tasks.loop(seconds=30)
     async def giveaway_watcher(self):
-        data = _load_json(GIVEAWAYS_FILE, {"giveaways": []})
-        giveaways = data.get("giveaways", [])
-        if not giveaways:
-            return
-
         now = _utcnow()
-        changed = False
-
-        for gw in giveaways:
-            if not gw.get("active", False):
-                continue
-            try:
-                ends_at = _fromiso(gw["ends_at"])
-            except Exception:
+        for guild in self.bot.guilds:
+            data = _load_json(guild.id, {"giveaways": []})
+            giveaways = data.get("giveaways", [])
+            if not giveaways:
                 continue
 
-            if ends_at > now:
-                continue
+            changed = False
 
-            # End it
-            ok = await self._end_giveaway_by_record(gw, reason="AUTO_END")
-            if ok:
-                gw["active"] = False
-                gw["ended_at"] = _iso(now)
-                changed = True
+            for gw in giveaways:
+                if not gw.get("active", False):
+                    continue
+                try:
+                    ends_at = _fromiso(gw["ends_at"])
+                except Exception:
+                    continue
 
-        if changed:
-            _save_json(GIVEAWAYS_FILE, data)
+                if ends_at > now:
+                    continue
+
+                # End it
+                ok = await self._end_giveaway_by_record(gw, reason="AUTO_END")
+                if ok:
+                    gw["active"] = False
+                    gw["ended_at"] = _iso(now)
+                    changed = True
+
+            if changed:
+                _save_json(guild.id, data)
 
     @giveaway_watcher.before_loop
     async def before_giveaway_watcher(self):
@@ -289,7 +296,7 @@ class Giveaways(commands.Cog):
         except Exception:
             pass
 
-        data = _load_json(GIVEAWAYS_FILE, {"giveaways": []})
+        data = _load_json(ctx.guild.id, {"giveaways": []})
         record = {
             "guild_id": str(ctx.guild.id),
             "channel_id": str(channel.id),
@@ -305,7 +312,7 @@ class Giveaways(commands.Cog):
             "winner_ids": []
         }
         data["giveaways"].append(record)
-        _save_json(GIVEAWAYS_FILE, data)
+        _save_json(ctx.guild.id, data)
 
         conf = discord.Embed(
             title="✅ GIVEAWAY STARTED",
@@ -318,7 +325,7 @@ class Giveaways(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def giveaway_end(self, ctx, message_id: int, channel: discord.TextChannel | None = None):
         channel = channel or ctx.channel
-        data = _load_json(GIVEAWAYS_FILE, {"giveaways": []})
+        data = _load_json(ctx.guild.id, {"giveaways": []})
 
         gw = None
         for r in data.get("giveaways", []):
@@ -333,7 +340,7 @@ class Giveaways(commands.Cog):
         if ok:
             gw["active"] = False
             gw["ended_at"] = _iso(_utcnow())
-            _save_json(GIVEAWAYS_FILE, data)
+            _save_json(ctx.guild.id, data)
             return await ctx.send("✅ Giveaway ended.")
         return await ctx.send("❌ Failed to end giveaway (message not found?).")
 
@@ -341,7 +348,7 @@ class Giveaways(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     async def giveaway_reroll(self, ctx, message_id: int, channel: discord.TextChannel | None = None):
         channel = channel or ctx.channel
-        data = _load_json(GIVEAWAYS_FILE, {"giveaways": []})
+        data = _load_json(ctx.guild.id, {"giveaways": []})
 
         gw = None
         for r in data.get("giveaways", []):
@@ -374,7 +381,7 @@ class Giveaways(commands.Cog):
 
         winners = random.sample(eligible, k=min(winners_count, len(eligible)))
         gw["winner_ids"] = [w.id for w in winners]
-        _save_json(GIVEAWAYS_FILE, data)
+        _save_json(ctx.guild.id, data)
 
         winner_mentions = ", ".join(w.mention for w in winners)
         await channel.send(f"🔁 Reroll winners: {winner_mentions} (Prize: **{gw.get('prize','giveaway')}**)")
@@ -382,7 +389,7 @@ class Giveaways(commands.Cog):
     @giveaway_group.command(name="list")
     @commands.has_permissions(manage_guild=True)
     async def giveaway_list(self, ctx):
-        data = _load_json(GIVEAWAYS_FILE, {"giveaways": []})
+        data = _load_json(ctx.guild.id, {"giveaways": []})
         active = [g for g in data.get("giveaways", []) if g.get("active", False) and str(g.get("guild_id")) == str(ctx.guild.id)]
         if not active:
             return await ctx.send("📋 No active giveaways.")

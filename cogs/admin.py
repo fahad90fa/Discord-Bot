@@ -19,13 +19,13 @@ from .utils import (
 
 def is_botowner():
     async def predicate(ctx):
-        data = load_data()
-        return ctx.author.id in data["owners"]
+        data = load_data(ctx.guild.id)
+        return ctx.author.id in data["owners"] or await ctx.bot.is_owner(ctx.author)
     return commands.check(predicate)
 
 def is_mod_admin_owner():
     async def predicate(ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         return (
             ctx.author.id in data["owners"]
             or ctx.author.id in data["admins"]
@@ -52,7 +52,7 @@ class Admin(commands.Cog):
     @list_group.command(name="owners", aliases=["owner"])
     @is_owner_check()
     async def list_owners(self, ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         embed = discord.Embed(title="👑 BOT OWNERS", color=0xf1c40f)
         embed.description = self._format_id_list(data.get("owners", []), "owners")
         await ctx.send(embed=embed)
@@ -60,7 +60,7 @@ class Admin(commands.Cog):
     @list_group.command(name="admins", aliases=["admin"])
     @is_owner_check()
     async def list_admins(self, ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         embed = discord.Embed(title="🛡️ BOT ADMINS", color=0x3498db)
         embed.description = self._format_id_list(data.get("admins", []), "admins")
         await ctx.send(embed=embed)
@@ -68,7 +68,7 @@ class Admin(commands.Cog):
     @list_group.command(name="mod", aliases=["mods", "moderators"])
     @is_owner_check()
     async def list_mods(self, ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         embed = discord.Embed(title="⚔️ BOT MODS", color=0x2ecc71)
         embed.description = self._format_id_list(data.get("mods", []), "mods")
         await ctx.send(embed=embed)
@@ -102,6 +102,7 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def db_check(self, ctx):
         """Verify that all major systems are DB-backed (Owner Only)."""
+        guild_id = str(ctx.guild.id)
         checks = [
             ("attendance_config.json", {}),
             ("attendance_data.json", {}),
@@ -133,9 +134,9 @@ class Admin(commands.Cog):
         for key, default in checks:
             try:
                 # Ensure key exists even if feature hasn't been configured yet.
-                if not db.has_key(key):
-                    db.set_json(key, default)
-                val = db.get_json(key, default, migrate_file=key)
+                if not db.has_key_scoped(key, guild_id):
+                    db.set_json_scoped(key, guild_id, default)
+                val = db.get_json_scoped(key, guild_id, default, migrate_file=key)
                 if not isinstance(val, type(default)):
                     bad.append(f"{key} (type)")
                 else:
@@ -201,10 +202,10 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def addowner(self, ctx, user: discord.User):
         """Add a new bot owner (Owner Only)"""
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user.id not in data["owners"]:
             data["owners"].append(user.id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"✅ Added {user.mention} as a **Bot Owner**.")
         else:
             await ctx.send(f"⚠️ {user.mention} is already an owner.")
@@ -213,14 +214,14 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def removeowner(self, ctx, user: discord.User):
         """Remove a bot owner (Owner Only)"""
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user.id in data["owners"]:
             # Prevent removing self
             if user.id == ctx.author.id:
                 return await ctx.send("❌ You cannot remove yourself as an owner.")
                 
             data["owners"].remove(user.id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"❌ Removed {user.mention} from **Bot Owners**.")
         else:
             await ctx.send(f"⚠️ {user.mention} is not an owner.")
@@ -228,47 +229,47 @@ class Admin(commands.Cog):
     @commands.command()
     @is_owner_check()
     async def addadmin(self, ctx, user_id: int):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user_id not in data["admins"]:
             data["admins"].append(user_id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"✅ Added <@{user_id}> as **Admin**")
 
     @commands.command()
     @is_owner_check()
     async def removeadmin(self, ctx, user_id: int):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user_id in data["admins"]:
             data["admins"].remove(user_id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"❌ Removed <@{user_id}> from **Admins**")
 
     @commands.command()
     @is_owner_check()
     async def addmod(self, ctx, user_id: int):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user_id not in data["mods"]:
             data["mods"].append(user_id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"✅ Added <@{user_id}> as **Mod**")
 
     @commands.command()
     @is_owner_check()
     async def removemod(self, ctx, user_id: int):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user_id in data["mods"]:
             data["mods"].remove(user_id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"❌ Removed <@{user_id}> from **Mods**")
 
     @commands.command()
     @is_botowner()
     async def addowner(self, ctx, user: discord.User):
         """Add a new bot owner (Owner Only)"""
-        data = load_data()
+        data = load_data(ctx.guild.id)
         if user.id not in data["owners"]:
             data["owners"].append(user.id)
-            save_data(data)
+            save_data(data, ctx.guild.id)
             await ctx.send(f"✅ Added {user.mention} as a **Bot Owner**.")
         else:
             await ctx.send(f"⚠️ {user.mention} is already an owner.")
@@ -319,13 +320,13 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def add(self, ctx, user: discord.Member):
         try:
-            data = load_json("info.json")
+            data = db.get_json_scoped("info.json", str(ctx.guild.id), {}, migrate_file="info.json")
             data.setdefault("np", [])
             if user.id in data["np"]:
                 await ctx.send(f"❌ {user.name} already has no prefix.")
             else:
                 data["np"].append(user.id)
-                save_json("info.json", data)
+                db.set_json_scoped("info.json", str(ctx.guild.id), data)
                 await ctx.send(f"✅ Added no prefix to {user.name}")
         except Exception as e:
             await ctx.send(f"Error: {e}")
@@ -334,11 +335,11 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def remove(self, ctx, user: discord.Member):
         try:
-            data = load_json("info.json")
+            data = db.get_json_scoped("info.json", str(ctx.guild.id), {}, migrate_file="info.json")
             data.setdefault("np", [])
             if user.id in data["np"]:
                 data["np"].remove(user.id)
-                save_json("info.json", data)
+                db.set_json_scoped("info.json", str(ctx.guild.id), data)
                 await ctx.send(f"✅ Removed no prefix from {user.name}")
             else:
                 await ctx.send("❌ User doesn't have no prefix.")

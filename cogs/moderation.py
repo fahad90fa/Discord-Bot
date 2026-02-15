@@ -6,13 +6,13 @@ from .utils import load_data, load_ban_limits, save_ban_limits, send_modlog, DAI
 
 def is_admin_or_owner():
     async def predicate(ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         return ctx.author.id in data["owners"] or ctx.author.id in data["admins"]
     return commands.check(predicate)
 
 def is_mod_admin_owner():
     async def predicate(ctx):
-        data = load_data()
+        data = load_data(ctx.guild.id)
         return (
             ctx.author.id in data["owners"]
             or ctx.author.id in data["admins"]
@@ -128,8 +128,8 @@ class Moderation(commands.Cog):
     @is_owner_check()
     async def ban(self, ctx, member: discord.Member, *, reason="No reason provided"):
         """Execute TERMINATE sequence on a target entity"""
-        data = load_data()
-        ban_limits = load_ban_limits()
+        data = load_data(ctx.guild.id)
+        ban_limits = load_ban_limits(ctx.guild.id)
         admin_id = str(ctx.author.id)
         today = datetime.utcnow().strftime("%Y-%m-%d")
 

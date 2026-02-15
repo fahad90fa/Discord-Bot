@@ -11,29 +11,72 @@ import db
 
 SENT_NEWS_FILE = "sent_news.json"
 SESSION_ALERT_FILE = "session_alert_config.json"
-from .utils import get_news_channel, set_news_channel, get_reminder_channel, set_reminder_channel, is_owner_check
+from .utils import (
+    get_news_channel_guild,
+    set_news_channel_guild,
+    get_reminder_channel_guild,
+    set_reminder_channel_guild,
+    is_owner_check
+)
 
-def load_sent_news():
-    return db.get_json(SENT_NEWS_FILE, {}, migrate_file=SENT_NEWS_FILE)
+def load_sent_news(guild_id):
+    return db.get_json_scoped(SENT_NEWS_FILE, str(guild_id), {}, migrate_file=SENT_NEWS_FILE)
 
-def save_sent_news(data):
-    db.set_json(SENT_NEWS_FILE, data)
+def save_sent_news(guild_id, data):
+    db.set_json_scoped(SENT_NEWS_FILE, str(guild_id), data)
 
-def load_session_alert_config():
-    default = {"channels": {}, "last_sent": {}, "roles": {"session": {}, "news": {}}}
-    data = db.get_json(SESSION_ALERT_FILE, default, migrate_file=SESSION_ALERT_FILE)
-    data.setdefault("channels", {})
+def load_session_alert_config(guild_id):
+    default = {"channel_id": None, "last_sent": {}, "roles": {"session": None, "news": None}}
+    data = db.get_json_scoped(SESSION_ALERT_FILE, str(guild_id), default, migrate_file=SESSION_ALERT_FILE)
+    data.setdefault("channel_id", None)
     data.setdefault("last_sent", {})
     roles = data.setdefault("roles", {})
     if not isinstance(roles, dict):
-        data["roles"] = {"session": {}, "news": {}}
+        data["roles"] = {"session": None, "news": None}
     else:
-        roles.setdefault("session", {})
-        roles.setdefault("news", {})
+        roles.setdefault("session", None)
+        roles.setdefault("news", None)
+
+    # Migration from legacy global schema (channels/roles keyed by guild).
+    if not data.get("channel_id") and data.get("last_sent") == {}:
+        legacy = db.get_json(SESSION_ALERT_FILE, {}, migrate_file=SESSION_ALERT_FILE)
+        if isinstance(legacy, dict):
+            migrated = False
+            channels = legacy.get("channels", {})
+            if isinstance(channels, dict):
+                ch_id = channels.get(str(guild_id))
+                if ch_id:
+                    data["channel_id"] = ch_id
+                    migrated = True
+
+            legacy_roles = legacy.get("roles", {})
+            if isinstance(legacy_roles, dict):
+                session_role = legacy_roles.get("session", {})
+                news_role = legacy_roles.get("news", {})
+                if isinstance(session_role, dict):
+                    rid = session_role.get(str(guild_id))
+                    if rid:
+                        data["roles"]["session"] = rid
+                        migrated = True
+                if isinstance(news_role, dict):
+                    rid = news_role.get(str(guild_id))
+                    if rid:
+                        data["roles"]["news"] = rid
+                        migrated = True
+
+            legacy_last = legacy.get("last_sent", {})
+            if isinstance(legacy_last, dict):
+                last_for_guild = legacy_last.get(str(guild_id))
+                if isinstance(last_for_guild, dict) and last_for_guild:
+                    data["last_sent"] = last_for_guild
+                    migrated = True
+
+            if migrated:
+                save_session_alert_config(guild_id, data)
     return data
 
-def save_session_alert_config(data):
-    db.set_json(SESSION_ALERT_FILE, data)
+def save_session_alert_config(guild_id, data):
+    db.set_json_scoped(SESSION_ALERT_FILE, str(guild_id), data)
 
 def get_session_open_utc(now_utc, tz_name, hour, minute=0):
     """Return session open time for current local day in UTC + local datetime."""
@@ -279,23 +322,28 @@ class ForexNews(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def check_forex_news(self):
-        channel_id = get_news_channel()
-        if not channel_id:
+        targets = []
+        for guild in self.bot.guilds:
+            guild_id = str(guild.id)
+            channel_id = get_news_channel_guild(guild_id)
+            if not channel_id:
+                continue
+
+            channel = guild.get_channel(int(channel_id))
+            if not channel:
+                continue
+
+            reminder_channel_id = get_reminder_channel_guild(guild_id)
+            reminder_channel = guild.get_channel(int(reminder_channel_id)) if reminder_channel_id else None
+
+            session_cfg = load_session_alert_config(guild_id)
+            news_role_id = session_cfg.get("roles", {}).get("news")
+            news_ping = build_role_ping(guild, news_role_id)
+
+            targets.append((guild_id, channel, reminder_channel, news_ping))
+
+        if not targets:
             return
-
-        channel = self.bot.get_channel(int(channel_id))
-        if not channel:
-            return
-
-        reminder_channel = None
-        reminder_channel_id = get_reminder_channel()
-        if reminder_channel_id:
-            reminder_channel = self.bot.get_channel(int(reminder_channel_id))
-
-        session_cfg = load_session_alert_config()
-        guild_id = str(channel.guild.id)
-        news_role_id = session_cfg.get("roles", {}).get("news", {}).get(guild_id)
-        news_ping = build_role_ping(channel.guild, news_role_id)
 
         # Check if we have recent cache (less than 6 hours old)
         # This prevents unnecessary API calls and rate limiting
@@ -312,153 +360,148 @@ class ForexNews(commands.Cog):
         if not news_data:
             return
 
-        sent_news_dict = load_sent_news() # Format: {event_id: {"msg_id": 123, "actual": "1.2%"}}
         now_utc = datetime.now(pytz.UTC)
-        changed = False
+        for guild_id, channel, reminder_channel, news_ping in targets:
+            sent_news_dict = load_sent_news(guild_id)
+            changed = False
 
-        for event in news_data:
-            # Event unique ID
-            event_id = f"{event['title']}_{event['country']}_{event['date']}"
-            event_record = sent_news_dict.get(event_id, {})
-            
-            # Parse event date
-            try:
-                event_dt = datetime.fromisoformat(event['date'])
-                if event_dt.tzinfo is None:
-                    event_dt = pytz.UTC.localize(event_dt)
-                else:
-                    event_dt = event_dt.astimezone(pytz.UTC)
-            except Exception:
-                continue
-
-            time_diff = (event_dt - now_utc).total_seconds() / 60.0
-
-            # Impact Colors & Emojis
-            impact = event['impact']
-            color = discord.Color.blue()
-            impact_emoji = "⚪"
-            
-            if impact == "High":
-                color = discord.Color.red()
-                impact_emoji = "🔴"
-            elif impact == "Medium":
-                color = discord.Color.orange()
-                impact_emoji = "🟠"
-            elif impact == "Low":
-                color = discord.Color.light_gray()
-                impact_emoji = "🟡"
-            elif impact == "Holiday":
-                color = discord.Color.purple()
-                impact_emoji = "🟣"
-
-            # News Item Embed Generator
-            def create_news_embed(title_prefix, footer_text):
-                is_past = time_diff < 0
-                status_label = "RESULTS LIVE" if (is_past and event.get('actual')) else "UPCOMING"
+            for event in news_data:
+                # Event unique ID
+                event_id = f"{event['title']}_{event['country']}_{event['date']}"
+                event_record = sent_news_dict.get(event_id, {})
                 
-                # Professional Theme Colors
-                embed_color = 0x2b2d31 # Institutional Gray
-                if impact == "High": embed_color = 0xff4b4b # Premium Red
-                elif impact == "Medium": embed_color = 0xffa500 # Trading Orange
-                
-                embed = discord.Embed(
-                    title=f"| QUANTUM TERMINAL | {event['title'].upper()}",
-                    color=embed_color,
-                    timestamp=datetime.utcnow()
-                )
-                
-                # Execution Data Grid
-                act_val = event.get('actual', 'PENDING')
-                fcs_val = event['forecast'] if event['forecast'] else 'N/A'
-                prv_val = event['previous'] if event['previous'] else 'N/A'
-                
-                grid = (
-                    f"┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓\n"
-                    f"┃ ACTUAL   ┃ {act_val:<16} ┃\n"
-                    f"┃ FORECAST ┃ {fcs_val:<16} ┃\n"
-                    f"┃ PREVIOUS ┃ {prv_val:<16} ┃\n"
-                    f"┗━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┛"
-                )
-                embed.description = f"```\n{grid}\n```"
-                
-                # Metadata
-                pkr_time = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
-                embed.add_field(name="🌍 REGION", value=f"`{event['country']}`", inline=True)
-                embed.add_field(name="📊 IMPACT", value=f"`{impact.upper()}`", inline=True)
-                embed.add_field(name="⏰ PK TIME", value=f"**{pkr_time.strftime('%I:%M %p')}**", inline=True)
-                embed.add_field(name="📅 DATE", value=f"`{pkr_time.strftime('%a, %b %d')}`", inline=True)
-                
-                if not is_past:
-                    hours, rem = divmod(int(abs(time_diff)), 60)
-                    embed.add_field(name="⏱️ COUNTDOWN", value=f"`T-{hours}h {rem}m`", inline=True)
-
-                # Set Official Logo
-                embed.set_thumbnail(url="https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441")
-                
-                embed.set_footer(text=f"TRADERS UNION FEED v3.0 • {footer_text}")
-                return embed
-
-            # Case 1: LIVE RESULT UPDATE (If alert already sent but actual was missing)
-            if event_record.get("msg_id") and not event_record.get("actual") and event.get("actual"):
+                # Parse event date
                 try:
-                    msg = await channel.fetch_message(event_record["msg_id"])
-                    embed = create_news_embed("🚨 LIVE UPDATE", "Forex Factory Real-Time Result")
-                    await msg.edit(embed=embed)
-                    event_record["actual"] = event["actual"]
-                    sent_news_dict[event_id] = event_record
-                    changed = True
-                except:
-                    pass
+                    event_dt = datetime.fromisoformat(event['date'])
+                    if event_dt.tzinfo is None:
+                        event_dt = pytz.UTC.localize(event_dt)
+                    else:
+                        event_dt = event_dt.astimezone(pytz.UTC)
+                except Exception:
+                    continue
 
-            # Case 2: SEND ALERT (At the time)
-            if 0 >= time_diff > -2:
-                if not event_record.get("alert_sent"):
-                    embed = create_news_embed("ACTUAL NEWS", "LIVE MARKET UPDATE")
-                    msg = await channel.send(
-                        content=news_ping if news_ping else None,
-                        embed=embed,
-                        allowed_mentions=discord.AllowedMentions(roles=True)
-                    )
-                        
-                    event_record["alert_sent"] = True
-                    event_record["msg_id"] = msg.id
-                    event_record["actual"] = event.get("actual", "")
-                    sent_news_dict[event_id] = event_record
-                    changed = True
+                time_diff = (event_dt - now_utc).total_seconds() / 60.0
 
-            # Case 3: 30-minute Reminder (Only for High/Medium and Today's events only)
-            # Use a wider window so loop timing jitter does not skip reminders.
-            elif 30 >= time_diff > 0.5:
-                # Check if event is today (PKT)
-                now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
-                event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
-                is_today = event_pkt.strftime('%Y-%m-%d') == now_pkt.strftime('%Y-%m-%d')
+                # Impact Colors & Emojis
+                impact = event['impact']
+                color = discord.Color.blue()
+                impact_emoji = "⚪"
                 
-                if not event_record.get("reminder_sent") and impact in ["High", "Medium"] and is_today:
-                    embed = create_news_embed("⏳ News in 30 Mins", "Forex Factory Reminder")
-                    target_channel = reminder_channel or channel
-                    await target_channel.send(
-                        content=news_ping if news_ping else None,
-                        embed=embed,
-                        allowed_mentions=discord.AllowedMentions(roles=True)
-                    )
-                    event_record["reminder_sent"] = True
-                    sent_news_dict[event_id] = event_record
-                    changed = True
+                if impact == "High":
+                    color = discord.Color.red()
+                    impact_emoji = "🔴"
+                elif impact == "Medium":
+                    color = discord.Color.orange()
+                    impact_emoji = "🟠"
+                elif impact == "Low":
+                    color = discord.Color.light_gray()
+                    impact_emoji = "🟡"
+                elif impact == "Holiday":
+                    color = discord.Color.purple()
+                    impact_emoji = "🟣"
 
-        if changed:
-            save_sent_news(sent_news_dict)
+                # News Item Embed Generator
+                def create_news_embed(title_prefix, footer_text):
+                    is_past = time_diff < 0
+                    status_label = "RESULTS LIVE" if (is_past and event.get('actual')) else "UPCOMING"
+                    
+                    # Professional Theme Colors
+                    embed_color = 0x2b2d31 # Institutional Gray
+                    if impact == "High": embed_color = 0xff4b4b # Premium Red
+                    elif impact == "Medium": embed_color = 0xffa500 # Trading Orange
+                    
+                    embed = discord.Embed(
+                        title=f"| QUANTUM TERMINAL | {event['title'].upper()}",
+                        color=embed_color,
+                        timestamp=datetime.utcnow()
+                    )
+                    
+                    # Execution Data Grid
+                    act_val = event.get('actual', 'PENDING')
+                    fcs_val = event['forecast'] if event['forecast'] else 'N/A'
+                    prv_val = event['previous'] if event['previous'] else 'N/A'
+                    
+                    grid = (
+                        f"┏━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓\n"
+                        f"┃ ACTUAL   ┃ {act_val:<16} ┃\n"
+                        f"┃ FORECAST ┃ {fcs_val:<16} ┃\n"
+                        f"┃ PREVIOUS ┃ {prv_val:<16} ┃\n"
+                        f"┗━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┛"
+                    )
+                    embed.description = f"```\n{grid}\n```"
+                    
+                    # Metadata
+                    pkr_time = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    embed.add_field(name="🌍 REGION", value=f"`{event['country']}`", inline=True)
+                    embed.add_field(name="📊 IMPACT", value=f"`{impact.upper()}`", inline=True)
+                    embed.add_field(name="⏰ PK TIME", value=f"**{pkr_time.strftime('%I:%M %p')}**", inline=True)
+                    embed.add_field(name="📅 DATE", value=f"`{pkr_time.strftime('%a, %b %d')}`", inline=True)
+                    
+                    if not is_past:
+                        hours, rem = divmod(int(abs(time_diff)), 60)
+                        embed.add_field(name="⏱️ COUNTDOWN", value=f"`T-{hours}h {rem}m`", inline=True)
+
+                    # Set Official Logo
+                    embed.set_thumbnail(url="https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441")
+                    
+                    embed.set_footer(text=f"TRADERS UNION FEED v3.0 • {footer_text}")
+                    return embed
+
+                # Case 1: LIVE RESULT UPDATE (If alert already sent but actual was missing)
+                if event_record.get("msg_id") and not event_record.get("actual") and event.get("actual"):
+                    try:
+                        msg = await channel.fetch_message(event_record["msg_id"])
+                        embed = create_news_embed("🚨 LIVE UPDATE", "Forex Factory Real-Time Result")
+                        await msg.edit(embed=embed)
+                        event_record["actual"] = event["actual"]
+                        sent_news_dict[event_id] = event_record
+                        changed = True
+                    except:
+                        pass
+
+                # Case 2: SEND ALERT (At the time)
+                if 0 >= time_diff > -2:
+                    if not event_record.get("alert_sent"):
+                        embed = create_news_embed("ACTUAL NEWS", "LIVE MARKET UPDATE")
+                        msg = await channel.send(
+                            content=news_ping if news_ping else None,
+                            embed=embed,
+                            allowed_mentions=discord.AllowedMentions(roles=True)
+                        )
+                            
+                        event_record["alert_sent"] = True
+                        event_record["msg_id"] = msg.id
+                        event_record["actual"] = event.get("actual", "")
+                        sent_news_dict[event_id] = event_record
+                        changed = True
+
+                # Case 3: 30-minute Reminder (Only for High/Medium and Today's events only)
+                # Use a wider window so loop timing jitter does not skip reminders.
+                elif 30 >= time_diff > 0.5:
+                    # Check if event is today (PKT)
+                    now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
+                    event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    is_today = event_pkt.strftime('%Y-%m-%d') == now_pkt.strftime('%Y-%m-%d')
+                    
+                    if not event_record.get("reminder_sent") and impact in ["High", "Medium"] and is_today:
+                        embed = create_news_embed("⏳ News in 30 Mins", "Forex Factory Reminder")
+                        target_channel = reminder_channel or channel
+                        await target_channel.send(
+                            content=news_ping if news_ping else None,
+                            embed=embed,
+                            allowed_mentions=discord.AllowedMentions(roles=True)
+                        )
+                        event_record["reminder_sent"] = True
+                        sent_news_dict[event_id] = event_record
+                        changed = True
+
+            if changed:
+                save_sent_news(guild_id, sent_news_dict)
 
     @tasks.loop(minutes=1)
     async def session_open_alerts(self):
-        config = load_session_alert_config()
-        channels = config.get("channels", {})
-        if not channels:
-            return
-
         now_utc = datetime.now(pytz.UTC)
         now_pkt = now_utc.astimezone(pytz.timezone("Asia/Karachi"))
-        changed = False
 
         asia_open_utc, asia_open_local = get_session_open_utc(now_utc, "Asia/Tokyo", 9, 0)
         london_open_utc, london_open_local = get_session_open_utc(now_utc, "Europe/London", 8, 0)
@@ -480,15 +523,22 @@ class ForexNews(commands.Cog):
             }
         ]
 
-        for guild_id, channel_id in channels.items():
-            channel = self.bot.get_channel(int(channel_id))
+        for guild in self.bot.guilds:
+            guild_id = str(guild.id)
+            config = load_session_alert_config(guild_id)
+            channel_id = config.get("channel_id")
+            if not channel_id:
+                continue
+
+            channel = guild.get_channel(int(channel_id))
             if not channel:
                 continue
 
-            session_role_id = config.get("roles", {}).get("session", {}).get(guild_id)
-            session_ping = build_role_ping(channel.guild, session_role_id)
+            session_role_id = config.get("roles", {}).get("session")
+            session_ping = build_role_ping(guild, session_role_id)
 
-            guild_last = config.setdefault("last_sent", {}).setdefault(guild_id, {})
+            guild_last = config.setdefault("last_sent", {})
+            changed = False
 
             for session in sessions:
                 minutes_since_open = (now_utc - session["open_utc"]).total_seconds() / 60.0
@@ -517,8 +567,8 @@ class ForexNews(commands.Cog):
                     guild_last[session["key"]] = session_date_key
                     changed = True
 
-        if changed:
-            save_session_alert_config(config)
+            if changed:
+                save_session_alert_config(guild_id, config)
 
     @session_open_alerts.before_loop
     async def before_session_open_alerts(self):
@@ -673,7 +723,7 @@ class ForexNews(commands.Cog):
         if not news_data:
             news_data = await fetch_news_from_api()
             source_label = "API"
-        sent_news_dict = load_sent_news()
+        sent_news_dict = load_sent_news(ctx.guild.id)
         
         if not news_data:
             await load_msg.delete()
@@ -1155,7 +1205,7 @@ class ForexNews(commands.Cog):
         if not news_data:
             news_data = await fetch_news_from_api()
             source_label = "API"
-        sent_news_dict = load_sent_news()
+        sent_news_dict = load_sent_news(ctx.guild.id)
         
         if not news_data:
             await load_msg.delete()
@@ -1382,7 +1432,7 @@ class ForexNews(commands.Cog):
     async def set_news_broadcast(self, ctx, channel: discord.TextChannel):
         """Configure the primary sector for economic broadcasts (Owner Only)"""
         load_msg = await ctx.send("🛰️ `CONFIGURING BROADCAST GATEWAY...`")
-        set_news_channel(channel.id)
+        set_news_channel_guild(ctx.guild.id, channel.id)
         await asyncio.sleep(0.5)
         await load_msg.edit(content="🕵️ `ESTABLISHING SECURE DATA PIPELINE...`")
         await asyncio.sleep(0.5)
@@ -1416,7 +1466,7 @@ class ForexNews(commands.Cog):
     @is_owner_check()
     async def set_reminder_broadcast(self, ctx, channel: discord.TextChannel):
         """Set the channel for 30-min news reminders (Owner Only)"""
-        set_reminder_channel(channel.id)
+        set_reminder_channel_guild(ctx.guild.id, channel.id)
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         embed = discord.Embed(
             title="✅ REMINDER CHANNEL SET",
@@ -1436,14 +1486,13 @@ class ForexNews(commands.Cog):
     @is_owner_check()
     async def test_reminder_broadcast(self, ctx):
         """Send a test 30-min reminder to the configured reminder channel (Owner Only)"""
-        reminder_channel_id = get_reminder_channel()
+        reminder_channel_id = get_reminder_channel_guild(ctx.guild.id)
         target_channel = self.bot.get_channel(int(reminder_channel_id)) if reminder_channel_id else None
         if not target_channel:
             target_channel = ctx.channel
 
-        session_cfg = load_session_alert_config()
-        guild_id = str(ctx.guild.id)
-        news_role_id = session_cfg.get("roles", {}).get("news", {}).get(guild_id)
+        session_cfg = load_session_alert_config(ctx.guild.id)
+        news_role_id = session_cfg.get("roles", {}).get("news")
         news_ping = build_role_ping(ctx.guild, news_role_id)
 
         now_pkt = datetime.now(pytz.timezone("Asia/Karachi"))
@@ -1476,12 +1525,10 @@ class ForexNews(commands.Cog):
     @is_owner_check()
     async def set_session_alert_channel(self, ctx, channel: discord.TextChannel):
         """Set auto session-open alert channel (Asia + London)"""
-        config = load_session_alert_config()
-        guild_id = str(ctx.guild.id)
-
-        config.setdefault("channels", {})[guild_id] = channel.id
-        config.setdefault("last_sent", {}).setdefault(guild_id, {})
-        save_session_alert_config(config)
+        config = load_session_alert_config(ctx.guild.id)
+        config["channel_id"] = channel.id
+        config.setdefault("last_sent", {})
+        save_session_alert_config(ctx.guild.id, config)
 
         now_utc = datetime.now(pytz.UTC)
         next_asia_pkt = get_next_session_open_pkt(now_utc, "Asia/Tokyo", 9, 0)
@@ -1510,12 +1557,11 @@ class ForexNews(commands.Cog):
     @is_owner_check()
     async def set_session_alert_role(self, ctx, role: discord.Role):
         """Set role mention for session-open alerts"""
-        config = load_session_alert_config()
-        guild_id = str(ctx.guild.id)
+        config = load_session_alert_config(ctx.guild.id)
         roles_cfg = config.setdefault("roles", {})
-        roles_cfg.setdefault("session", {})[guild_id] = role.id
-        roles_cfg.setdefault("news", roles_cfg.get("news", {}))
-        save_session_alert_config(config)
+        roles_cfg["session"] = role.id
+        roles_cfg.setdefault("news", None)
+        save_session_alert_config(ctx.guild.id, config)
 
         embed = discord.Embed(
             title="✅ SESSION ROLE UPDATED",
@@ -1529,12 +1575,11 @@ class ForexNews(commands.Cog):
     @is_owner_check()
     async def set_news_alert_role(self, ctx, role: discord.Role):
         """Set role mention for forex news alerts"""
-        config = load_session_alert_config()
-        guild_id = str(ctx.guild.id)
+        config = load_session_alert_config(ctx.guild.id)
         roles_cfg = config.setdefault("roles", {})
-        roles_cfg.setdefault("news", {})[guild_id] = role.id
-        roles_cfg.setdefault("session", roles_cfg.get("session", {}))
-        save_session_alert_config(config)
+        roles_cfg["news"] = role.id
+        roles_cfg.setdefault("session", None)
+        save_session_alert_config(ctx.guild.id, config)
 
         embed = discord.Embed(
             title="✅ NEWS ROLE UPDATED",

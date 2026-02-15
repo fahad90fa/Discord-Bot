@@ -53,6 +53,14 @@ def has_key(key: str) -> bool:
         return row is not None
 
 
+def _scoped_key(key: str, scope: str | int) -> str:
+    return f"{key}::guild:{scope}"
+
+
+def has_key_scoped(key: str, scope: str | int) -> bool:
+    return has_key(_scoped_key(key, scope))
+
+
 def get_raw(key: str):
     _ensure()
     with _lock:
@@ -118,6 +126,35 @@ def get_json(key: str, default, migrate_file: str | None = None):
     if not isinstance(value, type(default)):
         return default
     return value
+
+
+def get_json_scoped(key: str, scope: str | int, default, migrate_file: str | None = None):
+    """
+    Read JSON value from DB scoped to a guild/server.
+    Falls back to global key (optionally migrated from file) if scoped key missing
+    and the global value is a dict that contains this guild id.
+    """
+    scoped = _scoped_key(key, scope)
+    raw = get_raw(scoped)
+    if raw is not None:
+        try:
+            value = json.loads(raw)
+            return value if isinstance(value, type(default)) else default
+        except Exception:
+            return default
+
+    # Fallback to global value for one-time migration.
+    global_val = get_json(key, default, migrate_file=migrate_file)
+    if isinstance(global_val, dict):
+        v = global_val.get(str(scope))
+        if v is not None:
+            set_json(scoped, v)
+            return v
+    return default
+
+
+def set_json_scoped(key: str, scope: str | int, value):
+    set_json(_scoped_key(key, scope), value)
 
 
 def set_json(key: str, value):
