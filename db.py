@@ -4,13 +4,19 @@ import sqlite3
 import threading
 from datetime import datetime
 
-DB_PATH = os.getenv("BOT_DB_PATH") or "bot_data.sqlite3"
+DEFAULT_DB_DIR = os.path.join(os.path.expanduser("~"), ".traders_union_bot")
+DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "bot_data.sqlite3")
+DB_PATH = os.getenv("BOT_DB_PATH") or DEFAULT_DB_PATH
 
 _conn = None
 _lock = threading.Lock()
 
 
 def _connect():
+    # Ensure the directory exists for persistent storage.
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     # Better concurrency for bots with multiple tasks.

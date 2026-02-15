@@ -1,5 +1,2 @@
-.env
 bot_data.sqlite3
 *.sqlite3
-*.db
-*.db-journal
