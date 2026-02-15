@@ -165,8 +165,23 @@ async def fetch_news_from_api():
         print(f"API fetch error: {e}")
         return None
 
-async def fetch_news_data(force=False):
+def _max_event_dt_utc(events):
+    max_dt = None
+    for ev in events or []:
+        try:
+            dt = datetime.fromisoformat(ev["date"])
+            if dt.tzinfo is None:
+                dt = pytz.UTC.localize(dt)
+            dt = dt.astimezone(pytz.UTC)
+        except Exception:
+            continue
+        if max_dt is None or dt > max_dt:
+            max_dt = dt
+    return max_dt
+
+async def fetch_news_data(force=False, prefer_local_xml=True):
     global NEWS_CACHE, LAST_FETCH_TIME
+    now_utc = datetime.now(pytz.UTC)
     
     # Force purge if requested
     if force:
@@ -177,8 +192,8 @@ async def fetch_news_data(force=False):
         except Exception:
             pass
 
-    # 1. Try to read from local XML file specifically provided by user
-    if os.path.exists("current_news.xml"):
+    # 1. Try to read from local XML file specifically provided by user (if enabled)
+    if prefer_local_xml and os.path.exists("current_news.xml"):
         try:
             tree = ET.parse("current_news.xml")
             root = tree.getroot()
@@ -186,11 +201,15 @@ async def fetch_news_data(force=False):
                 print("📁 Loading data from local 'current_news.xml'")
                 events = parse_xml_events(root)
                 if events:
-                    NEWS_CACHE = events
-                    LAST_FETCH_TIME = datetime.now()
-                    # We don't save to cache file here necessarily, or maybe we should?
-                    # Let's just treat it as valid cache for this session
-                    return events
+                    # Stale-file protection: if the latest event is already far in the past,
+                    # ignore local XML and fall back to cache/API.
+                    max_dt = _max_event_dt_utc(events)
+                    if max_dt and max_dt > (now_utc - timedelta(hours=6)):
+                        NEWS_CACHE = events
+                        LAST_FETCH_TIME = datetime.now()
+                        return events
+                    else:
+                        print("⚠️ Local 'current_news.xml' looks stale; ignoring it.")
             else:
                 print("⚠️ Local 'current_news.xml' is not valid (HTML or wrong format).")
         except Exception as e:
@@ -203,7 +222,12 @@ async def fetch_news_data(force=False):
     now = datetime.now()
     # 3. Cache is valid for 6 hours
     if not force and LAST_FETCH_TIME and (now - LAST_FETCH_TIME).total_seconds() < 21600 and NEWS_CACHE:
-        return NEWS_CACHE
+        # Extra safety: if cache only contains past events, treat it as stale and refetch.
+        max_dt = _max_event_dt_utc(NEWS_CACHE)
+        if max_dt and max_dt < (now_utc - timedelta(hours=6)):
+            pass
+        else:
+            return NEWS_CACHE
 
     # 4. Fetch from API
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
@@ -799,6 +823,28 @@ class ForexNews(commands.Cog):
                         return await ctx.send(embed=embed)
 
                 day_name = now_pkt.strftime("%A")
+                # If there are events later in the week, show the next one to prove data is loaded.
+                upcoming_any = []
+                for event in news_data:
+                    try:
+                        event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                    except Exception:
+                        continue
+                    diff = (event_dt - now_utc).total_seconds() / 60.0
+                    if diff <= 0:
+                        continue
+                    event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                    upcoming_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+                if upcoming_any:
+                    upcoming_any.sort(key=lambda x: x[0])
+                    diff, impact, country, title, event_pkt = upcoming_any[0]
+                    when = event_pkt.strftime('%a, %b %d %I:%M %p PKT')
+                    return await ctx.send(
+                        f"📅 No events found for today/next 2 days (PKT). Next event in data: `{when}` | {impact} | {country} | {title}"
+                    )
+
                 if day_name in {"Saturday", "Sunday"}:
                     return await ctx.send(f"📅 No events found for today/next 2 days (PKT). It's {day_name}, so this can be normal.")
 
@@ -893,7 +939,7 @@ class ForexNews(commands.Cog):
             pass
         
         # Force a fetch
-        news_data = await fetch_news_data()
+        news_data = await fetch_news_data(force=True, prefer_local_xml=False)
         await asyncio.sleep(0.5)
         
         if news_data:
@@ -1074,7 +1120,7 @@ class ForexNews(commands.Cog):
         await load_msg.edit(content="📡 `RELOADING FRESH DATA...`")
         
         # Fetch fresh data
-        news_data = await fetch_news_data(force=True)
+        news_data = await fetch_news_data(force=True, prefer_local_xml=False)
         
         await asyncio.sleep(0.5)
         
@@ -1248,6 +1294,27 @@ class ForexNews(commands.Cog):
                         return await ctx.send(embed=embed)
 
                 day_name = now_pkt.strftime("%A")
+                upcoming_any = []
+                for event in news_data:
+                    try:
+                        event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                    except Exception:
+                        continue
+                    diff = (event_dt - now_utc).total_seconds() / 60.0
+                    if diff <= 0:
+                        continue
+                    event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                    upcoming_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+                if upcoming_any:
+                    upcoming_any.sort(key=lambda x: x[0])
+                    diff, impact, country, title, event_pkt = upcoming_any[0]
+                    when = event_pkt.strftime('%a, %b %d %I:%M %p PKT')
+                    return await ctx.send(
+                        f"📅 No events found for today/next 2 days (PKT). Next event in data: `{when}` | {impact} | {country} | {title}"
+                    )
+
                 if day_name in {"Saturday", "Sunday"}:
                     return await ctx.send(f"📅 No events found for today/next 2 days (PKT). It's {day_name}, so this can be normal.")
                 return await ctx.send(f"❌ No events found for today/next 2 days in current data ({today_str} PKT). Try `-refreshnews`.")
