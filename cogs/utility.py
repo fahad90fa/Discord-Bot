@@ -5,7 +5,26 @@ import re
 import aiohttp
 import io
 import os
+from datetime import datetime
+import db
 from .utils import load_data, send_modlog, is_owner_check
+
+SNIPE_FILE = "snipe_cache.json"
+MAX_SNIPES_PER_CHANNEL = 20
+
+def _load_snipes(guild_id):
+    data = db.get_json_scoped(SNIPE_FILE, str(guild_id), {}, migrate_file=SNIPE_FILE)
+    if not isinstance(data, dict):
+        data = {}
+    return data
+
+def _save_snipes(guild_id, data):
+    db.set_json_scoped(SNIPE_FILE, str(guild_id), data)
+
+def _trim_snipes(snipes, max_len):
+    if len(snipes) <= max_len:
+        return snipes
+    return snipes[-max_len:]
 
 def is_admin_or_owner():
     async def predicate(ctx):
@@ -16,6 +35,111 @@ def is_admin_or_owner():
 class Utility(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message: discord.Message):
+        if not message.guild or not message.channel:
+            return
+        if message.author and message.author.bot:
+            return
+
+        guild_id = str(message.guild.id)
+        channel_id = str(message.channel.id)
+        snipes = _load_snipes(guild_id)
+        channel_snipes = snipes.get(channel_id, [])
+
+        attachments = []
+        for a in (message.attachments or []):
+            try:
+                attachments.append({"filename": a.filename, "url": a.url})
+            except Exception:
+                continue
+
+        stickers = []
+        for s in (message.stickers or []):
+            try:
+                stickers.append({"name": s.name, "url": s.url})
+            except Exception:
+                continue
+
+        reply_info = None
+        if message.reference and message.reference.message_id:
+            reply_info = {
+                "message_id": str(message.reference.message_id),
+                "channel_id": str(message.reference.channel_id) if message.reference.channel_id else None,
+                "author_id": str(message.reference.resolved.author.id) if message.reference.resolved and message.reference.resolved.author else None
+            }
+
+        channel_snipes.append({
+            "message_id": str(message.id),
+            "author_id": str(message.author.id) if message.author else None,
+            "author_name": str(message.author) if message.author else "Unknown",
+            "content": message.content or "",
+            "attachments": attachments,
+            "stickers": stickers,
+            "created_at": message.created_at.isoformat() if message.created_at else None,
+            "deleted_at": datetime.utcnow().isoformat(),
+            "reply_to": reply_info
+        })
+
+        snipes[channel_id] = _trim_snipes(channel_snipes, MAX_SNIPES_PER_CHANNEL)
+        _save_snipes(guild_id, snipes)
+
+    @commands.command(name="snipe")
+    @commands.guild_only()
+    async def snipe(self, ctx, channel: discord.TextChannel = None, index: int = 1):
+        """Show recently deleted messages. Usage: -snipe [#channel] [index]"""
+        channel = channel or ctx.channel
+        if index < 1:
+            return await ctx.send("❌ Index must be 1 or higher.")
+
+        snipes = _load_snipes(ctx.guild.id)
+        channel_snipes = snipes.get(str(channel.id), [])
+        if not channel_snipes:
+            return await ctx.send("❌ Nothing to snipe in this channel.")
+
+        if index > len(channel_snipes):
+            return await ctx.send(f"❌ Only {len(channel_snipes)} snipes available for this channel.")
+
+        item = channel_snipes[-index]
+
+        embed = discord.Embed(
+            title="🛰️ SNIPE CAPTURE",
+            color=0x2b2d31,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Author", value=f"<@{item['author_id']}> (`{item['author_id']}`)" if item.get("author_id") else item.get("author_name", "Unknown"), inline=False)
+        embed.add_field(name="Channel", value=channel.mention, inline=True)
+        embed.add_field(name="Index", value=f"`{index}/{len(channel_snipes)}`", inline=True)
+
+        content = item.get("content") or "`(no text)`"
+        if len(content) > 1800:
+            content = content[:1800] + "..."
+        embed.add_field(name="Content", value=content, inline=False)
+
+        if item.get("attachments"):
+            files = "\n".join(f"- {a.get('filename','file')} ({a.get('url','')})" for a in item["attachments"][:5])
+            embed.add_field(name="Attachments", value=files, inline=False)
+
+        if item.get("stickers"):
+            st = "\n".join(f"- {s.get('name','sticker')} ({s.get('url','')})" for s in item["stickers"][:5])
+            embed.add_field(name="Stickers", value=st, inline=False)
+
+        if item.get("reply_to"):
+            r = item["reply_to"]
+            reply_text = f"Message ID: `{r.get('message_id')}`"
+            if r.get("author_id"):
+                reply_text += f"\nAuthor: <@{r.get('author_id')}>"
+            embed.add_field(name="Reply To", value=reply_text, inline=False)
+
+        if item.get("created_at"):
+            try:
+                created = datetime.fromisoformat(item["created_at"])
+                embed.set_footer(text=f"Sent at {created.strftime('%b %d, %I:%M %p UTC')}")
+            except Exception:
+                pass
+
+        await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
     async def ping(self, ctx):
