@@ -72,7 +72,7 @@ async def setup_hook():
 
 bot.setup_hook = setup_hook
 
-# Core Message Handler (Mainly for Mention Responder)
+# Core Message Handler (Mainly for Mention Responder
 @bot.event
 async def on_message(message):
     if message.author.bot:
