@@ -737,6 +737,12 @@ class ForexNews(commands.Cog):
                 today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
 
             if not today_any:
+                # If it's a weekend or there are genuinely no events today, don't show a misleading refresh error.
+                day_name = now_pkt.strftime("%A")
+                if day_name in {"Saturday", "Sunday"}:
+                    return await ctx.send(f"📅 No events found for today (PKT). It's {day_name}, so this is normal.")
+
+                # Otherwise, suggest refresh since data might be stale.
                 return await ctx.send("❌ No events found in current data for today (PKT). Try `-refreshnews`.")
 
             # Show nearest 5 events for today (PKT)
@@ -1098,6 +1104,9 @@ class ForexNews(commands.Cog):
                 today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
 
             if not today_any:
+                day_name = now_pkt.strftime("%A")
+                if day_name in {"Saturday", "Sunday"}:
+                    return await ctx.send(f"📅 No events found for today (PKT). It's {day_name}, so this is normal.")
                 return await ctx.send(f"❌ No events found for today in current data ({today_str} PKT). Try `-refreshnews`.")
 
             today_any.sort(key=lambda x: abs(x[0]))
