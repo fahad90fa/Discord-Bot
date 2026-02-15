@@ -172,6 +172,7 @@ class HelpDropdown(discord.ui.Select):
             embed.add_field(name="📝 [SETMODLOG]", value="```ansi\n\u001b[0;37mSecure overwatch logging.\u001b[0m\n```", inline=False)
             embed.add_field(name="📍 [SETNEWS]", value="```ansi\n\u001b[0;37mNews feed channel setup.\u001b[0m\n```", inline=False)
             embed.add_field(name="🧾 [SETAUDITLOG]", value="```ansi\n\u001b[0;37mAudit channel setup.\u001b[0m\n```", inline=False)
+            embed.add_field(name="🎫 [TICKET SETUP]", value="```ansi\n\u001b[0;37m-ticket setup #panel #log #category @roles\u001b[0m\n```", inline=False)
             embed.add_field(name="🗄️ [DB STATUS]", value="```ansi\n\u001b[0;37m-db status\u001b[0m\n```", inline=False)
             embed.add_field(name="🛡️ [BYPASS]", value="```ansi\n\u001b[0;37mAuto-Mod immunity role.\u001b[0m\n```", inline=False)
             embed.add_field(name="⚙️ [SETSTATUS]", value="```ansi\n\u001b[0;37mPresence & activity config.\u001b[0m\n```", inline=False)
