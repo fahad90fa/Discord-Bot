@@ -658,6 +658,7 @@ class ForexNews(commands.Cog):
         now_utc = datetime.now(pytz.UTC)
         now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
         today_str_pkt = now_pkt.strftime('%Y-%m-%d')
+        tomorrow_str_pkt = (now_pkt + timedelta(days=1)).strftime('%Y-%m-%d')
         
         upcoming_reminders = []
         within_30_min = []  # Events coming in 30 minutes
@@ -693,17 +694,13 @@ class ForexNews(commands.Cog):
         
         # If no upcoming events today, get tomorrow's events
         if not upcoming_reminders:
-            from datetime import timedelta
-            tomorrow_pkt = now_pkt + timedelta(days=1)
-            tomorrow_str = tomorrow_pkt.strftime('%Y-%m-%d')
-            
             for event in news_data:
                 event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
                 event_dt_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
                 event_date_str = event_dt_pkt.strftime('%Y-%m-%d')
                 
                 # Only tomorrow's events
-                if event_date_str != tomorrow_str:
+                if event_date_str != tomorrow_str_pkt:
                     continue
                 
                 time_diff = (event_dt - now_utc).total_seconds() / 60.0
@@ -737,13 +734,45 @@ class ForexNews(commands.Cog):
                 today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
 
             if not today_any:
-                # If it's a weekend or there are genuinely no events today, don't show a misleading refresh error.
+                # If nothing for today, show tomorrow snapshot (any impact) if available.
+                tomorrow_any = []
+                for event in news_data:
+                    try:
+                        event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                    except Exception:
+                        continue
+                    event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    if event_pkt.strftime('%Y-%m-%d') != tomorrow_str_pkt:
+                        continue
+                    impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                    diff = (event_dt - now_utc).total_seconds() / 60.0
+                    tomorrow_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+                if tomorrow_any:
+                    tomorrow_any.sort(key=lambda x: abs(x[0]))
+                    lines = []
+                    for diff, impact, country, title, event_pkt in tomorrow_any[:5]:
+                        when = event_pkt.strftime('%I:%M %p PKT')
+                        mins = int(diff)
+                        lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
+
+                    embed = discord.Embed(
+                        title="NO REMINDERS TODAY, SHOWING TOMORROW",
+                        description=(
+                            f"Now (PKT): `{now_pkt.strftime('%I:%M %p')}`\n"
+                            f"Tomorrow (PKT): `{tomorrow_str_pkt}`\n\n"
+                            "Nearest events tomorrow (any impact):\n" + "\n".join(lines)
+                        ),
+                        color=0xf39c12
+                    )
+                    embed.set_footer(text=f"Source: {source_label}")
+                    return await ctx.send(embed=embed)
+
                 day_name = now_pkt.strftime("%A")
                 if day_name in {"Saturday", "Sunday"}:
-                    return await ctx.send(f"📅 No events found for today (PKT). It's {day_name}, so this is normal.")
+                    return await ctx.send(f"📅 No events found for today or tomorrow (PKT). It's {day_name}, so this can be normal.")
 
-                # Otherwise, suggest refresh since data might be stale.
-                return await ctx.send("❌ No events found in current data for today (PKT). Try `-refreshnews`.")
+                return await ctx.send("❌ No events found for today or tomorrow (PKT). Try `-refreshnews`.")
 
             # Show nearest 5 events for today (PKT)
             today_any.sort(key=lambda x: abs(x[0]))
@@ -1059,6 +1088,7 @@ class ForexNews(commands.Cog):
         now_utc = datetime.now(pytz.UTC)
         now_pkt = datetime.now(pytz.timezone('Asia/Karachi'))
         today_str = now_pkt.strftime('%Y-%m-%d')
+        tomorrow_str = (now_pkt + timedelta(days=1)).strftime('%Y-%m-%d')
         
         upcoming_reminders = []
         
@@ -1085,6 +1115,29 @@ class ForexNews(commands.Cog):
                     "sent": is_sent,
                     "diff": time_diff
                 })
+
+        # If nothing for today, show tomorrow's upcoming High/Medium
+        showing_str = today_str
+        if not upcoming_reminders:
+            showing_str = tomorrow_str
+            for event in news_data:
+                event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                event_date_str = event_pkt.strftime('%Y-%m-%d')
+                if event_date_str != tomorrow_str:
+                    continue
+
+                time_diff = (event_dt - now_utc).total_seconds() / 60.0
+                impact = str(event.get('impact', '')).strip().title()
+                if impact in ["High", "Medium"] and time_diff > 0:
+                    event_id = f"{event['title']}_{event['country']}_{event['date']}"
+                    is_sent = sent_news_dict.get(event_id, {}).get("reminder_sent", False)
+                    upcoming_reminders.append({
+                        "event": event,
+                        "time": event_dt,
+                        "sent": is_sent,
+                        "diff": time_diff
+                    })
         
         await load_msg.delete()
         
@@ -1104,10 +1157,42 @@ class ForexNews(commands.Cog):
                 today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
 
             if not today_any:
+                # If no events today, try tomorrow snapshot (any impact)
+                tomorrow_any = []
+                for event in news_data:
+                    try:
+                        event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                    except Exception:
+                        continue
+                    event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                    if event_pkt.strftime('%Y-%m-%d') != tomorrow_str:
+                        continue
+                    impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                    diff = (event_dt - now_utc).total_seconds() / 60.0
+                    tomorrow_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+                if tomorrow_any:
+                    tomorrow_any.sort(key=lambda x: abs(x[0]))
+                    lines = []
+                    for diff, impact, country, title, event_pkt in tomorrow_any[:8]:
+                        when = event_pkt.strftime('%I:%M %p PKT')
+                        mins = int(diff)
+                        lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
+                    embed = discord.Embed(
+                        title=f"NO HIGH/MEDIUM TODAY, SHOWING TOMORROW ({tomorrow_str})",
+                        description=(
+                            f"Source: `{source_label}`\n"
+                            "Nearest events tomorrow (any impact):\n" + "\n".join(lines)
+                        ),
+                        color=0xf39c12
+                    )
+                    embed.set_footer(text="If impact is Low/Unknown, it will not appear in reminder queue.")
+                    return await ctx.send(embed=embed)
+
                 day_name = now_pkt.strftime("%A")
                 if day_name in {"Saturday", "Sunday"}:
-                    return await ctx.send(f"📅 No events found for today (PKT). It's {day_name}, so this is normal.")
-                return await ctx.send(f"❌ No events found for today in current data ({today_str} PKT). Try `-refreshnews`.")
+                    return await ctx.send(f"📅 No events found for today or tomorrow (PKT). It's {day_name}, so this can be normal.")
+                return await ctx.send(f"❌ No events found for today or tomorrow in current data ({today_str} PKT). Try `-refreshnews`.")
 
             today_any.sort(key=lambda x: abs(x[0]))
             lines = []
@@ -1130,9 +1215,10 @@ class ForexNews(commands.Cog):
         
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         
+        day_label = "TODAY" if showing_str == today_str else "TOMORROW"
         embed = discord.Embed(
-            title="🔔 UPCOMING 30-MIN REMINDERS",
-            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • TODAY'S HIGH/MEDIUM IMPACT NEWS\u001b[0m\n\u001b[0;37m{now_pkt.strftime('%A, %b %d, %Y')}\u001b[0m\n```",
+            title=f"🔔 UPCOMING 30-MIN REMINDERS ({day_label})",
+            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • {day_label} HIGH/MEDIUM IMPACT NEWS\u001b[0m\n\u001b[0;37m{showing_str} (PKT)\u001b[0m\n```",
             color=0x3498db
         )
         embed.set_author(name="TRADERS UNION REMINDER SYSTEM", icon_url=logo)
