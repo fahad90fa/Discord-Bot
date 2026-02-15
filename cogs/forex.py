@@ -673,7 +673,7 @@ class ForexNews(commands.Cog):
                 continue
             
             time_diff = (event_dt - now_utc).total_seconds() / 60.0
-            impact = event['impact']
+            impact = str(event.get('impact', '')).strip().title()
 
             # Only track High/Medium impact events that haven't happened yet
             if impact in ["High", "Medium"] and time_diff > 0:
@@ -707,7 +707,7 @@ class ForexNews(commands.Cog):
                     continue
                 
                 time_diff = (event_dt - now_utc).total_seconds() / 60.0
-                impact = event['impact']
+                impact = str(event.get('impact', '')).strip().title()
                 
                 if impact in ["High", "Medium"] and time_diff > 0:
                     event_id = f"{event['title']}_{event['country']}_{event['date']}"
@@ -722,7 +722,41 @@ class ForexNews(commands.Cog):
 
         await load_msg.delete()
         if not upcoming_reminders:
-            return await ctx.send("🏜️ `NO PENDING HIGH/MEDIUM REMINDERS IN QUEUE.`")
+            # Diagnostic: show what data we have for today (PKT), even if impacts are Low or already passed.
+            today_any = []
+            for event in news_data:
+                try:
+                    event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                except Exception:
+                    continue
+                event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                if event_pkt.strftime('%Y-%m-%d') != today_str_pkt:
+                    continue
+                impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                diff = (event_dt - now_utc).total_seconds() / 60.0
+                today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+            if not today_any:
+                return await ctx.send("❌ No events found in current data for today (PKT). Try `-refreshnews`.")
+
+            # Show nearest 5 events for today (PKT)
+            today_any.sort(key=lambda x: abs(x[0]))
+            lines = []
+            for diff, impact, country, title, event_pkt in today_any[:5]:
+                mins = int(diff)
+                when = event_pkt.strftime('%I:%M %p PKT')
+                lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
+
+            embed = discord.Embed(
+                title="NO HIGH/MEDIUM REMINDERS FOUND",
+                description=(
+                    f"Now (PKT): `{now_pkt.strftime('%I:%M %p')}` | Date: `{now_pkt.strftime('%Y-%m-%d')}`\n"
+                    "Nearest events today (any impact):\n" + "\n".join(lines)
+                ),
+                color=0xf39c12
+            )
+            embed.set_footer(text=f"Source: {source_label} • If impact is Low/Unknown, reminder won't schedule.")
+            return await ctx.send(embed=embed)
 
         # Check if we're showing today or tomorrow's news
         first_event_pkt = upcoming_reminders[0]['time'].astimezone(pytz.timezone('Asia/Karachi'))
@@ -1032,7 +1066,7 @@ class ForexNews(commands.Cog):
                 continue
             
             time_diff = (event_dt - now_utc).total_seconds() / 60.0
-            impact = event['impact']
+            impact = str(event.get('impact', '')).strip().title()
             
             # Only High/Medium impact, upcoming events
             if impact in ["High", "Medium"] and time_diff > 0:
@@ -1049,7 +1083,41 @@ class ForexNews(commands.Cog):
         await load_msg.delete()
         
         if not upcoming_reminders:
-            return await ctx.send(f"🏜️ `NO HIGH/MEDIUM IMPACT NEWS REMAINING TODAY ({today_str}).`")
+            # Diagnostic for today: show nearest events regardless of impact and explain filter.
+            today_any = []
+            for event in news_data:
+                try:
+                    event_dt = datetime.fromisoformat(event['date']).astimezone(pytz.UTC)
+                except Exception:
+                    continue
+                event_pkt = event_dt.astimezone(pytz.timezone('Asia/Karachi'))
+                if event_pkt.strftime('%Y-%m-%d') != today_str:
+                    continue
+                impact = str(event.get('impact', '')).strip().title() or "Unknown"
+                diff = (event_dt - now_utc).total_seconds() / 60.0
+                today_any.append((diff, impact, event.get("country"), event.get("title"), event_pkt))
+
+            if not today_any:
+                return await ctx.send(f"❌ No events found for today in current data ({today_str} PKT). Try `-refreshnews`.")
+
+            today_any.sort(key=lambda x: abs(x[0]))
+            lines = []
+            for diff, impact, country, title, event_pkt in today_any[:8]:
+                when = event_pkt.strftime('%I:%M %p PKT')
+                mins = int(diff)
+                lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
+
+            embed = discord.Embed(
+                title=f"NO HIGH/MEDIUM IMPACT NEWS REMAINING TODAY ({today_str})",
+                description=(
+                    f"Source: `{source_label}`\n"
+                    "This command only lists High/Medium events with time remaining.\n\n"
+                    "Nearest events today (any impact):\n" + "\n".join(lines)
+                ),
+                color=0xf39c12
+            )
+            embed.set_footer(text="If your event shows as Low/Unknown impact, it will not appear here.")
+            return await ctx.send(embed=embed)
         
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         
