@@ -47,7 +47,7 @@ async def on_ready():
 
 async def setup_hook():
     db.init_db()
-    # Load Extensions
+    # Load Extensions add 
     extensions = [
         "cogs.forex",
         "cogs.tickets",
