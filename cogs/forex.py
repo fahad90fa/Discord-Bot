@@ -20,27 +20,73 @@ from .utils import (
 )
 
 def load_sent_news(guild_id):
-    return db.get_setting(SENT_NEWS_FILE, int(guild_id), {})
-
-def save_sent_news(guild_id, data):
-    db.set_setting(SENT_NEWS_FILE, int(guild_id), data)
-
-def load_session_alert_config(guild_id):
-    default = {"channel_id": None, "last_sent": {}, "roles": {"session": None, "news": None}}
-    data = db.get_setting(SESSION_ALERT_FILE, int(guild_id), default)
-    data.setdefault("channel_id", None)
-    data.setdefault("last_sent", {})
-    roles = data.setdefault("roles", {})
-    if not isinstance(roles, dict):
-        data["roles"] = {"session": None, "news": None}
-    else:
-        roles.setdefault("session", None)
-        roles.setdefault("news", None)
-
+    rows = db.execute(
+        "SELECT event_id, alert_sent, reminder_sent, msg_id, actual FROM sent_news WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    data = {}
+    for r in rows:
+        data[r["event_id"]] = {
+            "alert_sent": r["alert_sent"],
+            "reminder_sent": r["reminder_sent"],
+            "msg_id": r["msg_id"],
+            "actual": r["actual"]
+        }
     return data
 
+def save_sent_news(guild_id, data):
+    gid = int(guild_id)
+    db.execute("DELETE FROM sent_news WHERE guild_id = %s", (gid,))
+    for event_id, row in (data or {}).items():
+        db.execute(
+            """
+            INSERT INTO sent_news (guild_id, event_id, alert_sent, reminder_sent, msg_id, actual)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                gid,
+                str(event_id),
+                bool(row.get("alert_sent", False)),
+                bool(row.get("reminder_sent", False)),
+                int(row["msg_id"]) if row.get("msg_id") else None,
+                row.get("actual")
+            )
+        )
+
+def load_session_alert_config(guild_id):
+    row = db.execute(
+        "SELECT channel_id, session_role_id, news_role_id, last_asia_date, last_london_date FROM session_alert_config WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    ) or {}
+    return {
+        "channel_id": row.get("channel_id"),
+        "roles": {"session": row.get("session_role_id"), "news": row.get("news_role_id")},
+        "last_sent": {"asia": row.get("last_asia_date"), "london": row.get("last_london_date")}
+    }
+
 def save_session_alert_config(guild_id, data):
-    db.set_setting(SESSION_ALERT_FILE, int(guild_id), data)
+    db.execute(
+        """
+        INSERT INTO session_alert_config (guild_id, channel_id, session_role_id, news_role_id, last_asia_date, last_london_date)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (guild_id) DO UPDATE SET
+          channel_id = EXCLUDED.channel_id,
+          session_role_id = EXCLUDED.session_role_id,
+          news_role_id = EXCLUDED.news_role_id,
+          last_asia_date = EXCLUDED.last_asia_date,
+          last_london_date = EXCLUDED.last_london_date
+        """,
+        (
+            int(guild_id),
+            data.get("channel_id"),
+            data.get("roles", {}).get("session"),
+            data.get("roles", {}).get("news"),
+            data.get("last_sent", {}).get("asia"),
+            data.get("last_sent", {}).get("london")
+        )
+    )
 
 def get_session_open_utc(now_utc, tz_name, hour, minute=0):
     """Return session open time for current local day in UTC + local datetime."""
@@ -76,15 +122,26 @@ LAST_FETCH_TIME = None
 
 def load_cache_from_file():
     global NEWS_CACHE, LAST_FETCH_TIME
-    data = db.get_setting(CACHE_FILE, None, {})
-    if isinstance(data, dict) and "news" in data:
-        NEWS_CACHE = data.get("news", [])
-        fetch_time_str = data.get("fetch_time")
-        if fetch_time_str:
-            try:
-                LAST_FETCH_TIME = datetime.fromisoformat(fetch_time_str)
-            except Exception:
-                LAST_FETCH_TIME = None
+    rows = db.execute(
+        "SELECT event_id, title, country, date_utc, impact, forecast, actual, previous, fetched_at FROM news_cache",
+        fetchall=True
+    ) or []
+    if rows:
+        NEWS_CACHE = []
+        for r in rows:
+            NEWS_CACHE.append({
+                "title": r["title"],
+                "country": r["country"],
+                "date": r["date_utc"],
+                "impact": r["impact"],
+                "forecast": r["forecast"],
+                "actual": r["actual"],
+                "previous": r["previous"]
+            })
+        try:
+            LAST_FETCH_TIME = datetime.fromisoformat(rows[0]["fetched_at"])
+        except Exception:
+            LAST_FETCH_TIME = None
         print(f"📁 Loaded {len(NEWS_CACHE)} events from cache.")
     else:
         NEWS_CACHE = []
@@ -92,10 +149,27 @@ def load_cache_from_file():
 
 def save_cache_to_file():
     try:
-        db.set_setting(CACHE_FILE, None, {
-            "news": NEWS_CACHE,
-            "fetch_time": LAST_FETCH_TIME.isoformat() if LAST_FETCH_TIME else None
-        })
+        db.execute("DELETE FROM news_cache", ())
+        fetched_at = LAST_FETCH_TIME.isoformat() if LAST_FETCH_TIME else datetime.utcnow().isoformat()
+        for ev in (NEWS_CACHE or []):
+            event_id = f"{ev.get('title','')}_{ev.get('country','')}_{ev.get('date','')}"
+            db.execute(
+                """
+                INSERT INTO news_cache (event_id, title, country, date_utc, impact, forecast, actual, previous, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    event_id,
+                    ev.get("title"),
+                    ev.get("country"),
+                    ev.get("date"),
+                    ev.get("impact"),
+                    ev.get("forecast"),
+                    ev.get("actual"),
+                    ev.get("previous"),
+                    fetched_at
+                )
+            )
     except Exception as e:
         print(f"Error saving cache: {e}")
 
@@ -195,7 +269,7 @@ async def fetch_news_data(force=False, prefer_local_xml=True):
         NEWS_CACHE = []
         LAST_FETCH_TIME = None
         try:
-            db.delete_setting(CACHE_FILE, None)
+            db.execute("DELETE FROM news_cache", ())
         except Exception:
             pass
 
@@ -946,7 +1020,7 @@ class ForexNews(commands.Cog):
         
         # Delete cache file to ensure clean slate
         try:
-            db.delete_setting(CACHE_FILE, None)
+            db.execute("DELETE FROM news_cache", ())
             await asyncio.sleep(0.5)
             await load_msg.edit(content="🧹 `CACHE PURGED. RE-ESTABLISHING LINK...`")
         except Exception:
@@ -1113,12 +1187,14 @@ class ForexNews(commands.Cog):
         
         for file_path, file_name in files_to_reset:
             try:
-                if db.has_setting(file_path, None):
-                    db.delete_setting(file_path, None)
+                if file_path == SENT_NEWS_FILE:
+                    db.execute("DELETE FROM sent_news WHERE guild_id = %s", (int(ctx.guild.id),))
                     status_text += f"✅ `{file_name}` RESET\n"
                     reset_count += 1
-                else:
-                    status_text += f"⚠️ `{file_name}` EMPTY\n"
+                elif file_path == CACHE_FILE:
+                    db.execute("DELETE FROM news_cache", ())
+                    status_text += f"✅ `{file_name}` RESET\n"
+                    reset_count += 1
             except Exception as e:
                 status_text += f"❌ `{file_name}` FAILED: {str(e)}\n"
         

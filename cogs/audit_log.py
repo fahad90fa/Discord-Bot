@@ -8,11 +8,28 @@ AUDIT_CONFIG_FILE = "audit_log_config.json"
 
 
 def _load_json(guild_id, default):
-    return db.get_setting(AUDIT_CONFIG_FILE, int(guild_id), default)
+    row = db.execute(
+        "SELECT channel_id FROM audit_log_config WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    )
+    if not row:
+        return default
+    return {"channel_id": row["channel_id"]}
 
 
 def _save_json(guild_id, data):
-    db.set_setting(AUDIT_CONFIG_FILE, int(guild_id), data)
+    if data.get("channel_id"):
+        db.execute(
+            """
+            INSERT INTO audit_log_config (guild_id, channel_id)
+            VALUES (%s, %s)
+            ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id
+            """,
+            (int(guild_id), int(data["channel_id"]))
+        )
+    else:
+        db.execute("DELETE FROM audit_log_config WHERE guild_id = %s", (int(guild_id),))
 
 
 def _truncate(s: str, n: int = 900) -> str:

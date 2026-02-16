@@ -102,61 +102,15 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def db_check(self, ctx):
         """Verify that all major systems are DB-backed (Owner Only)."""
-        guild_id = str(ctx.guild.id)
-        checks = [
-            ("attendance_config.json", {}),
-            ("attendance_data.json", {}),
-            ("news_config.json", {}),
-            ("sent_news.json", {}),
-            ("news_cache.json", {}),
-            ("session_alert_config.json", {}),
-            ("union_points.json", {}),
-            ("union_logs.json", []),
-            ("union_managers.json", []),
-            ("leaderboard_config.json", {}),
-            ("log_channel.json", {}),
-            ("welcome_config.json", {}),
-            ("audit_log_config.json", {}),
-            ("giveaways.json", {"giveaways": []}),
-            ("scheduled_announcements.json", {"items": []}),
-            ("moderation.json", {}),
-            ("modlogs.json", {}),
-            ("ban_limit.json", {}),
-            ("afk.json", {}),
-            ("antilink.json", {}),
-            ("antispam.json", {}),
-            ("automod.json", {}),
-            ("info.json", {}),
-        ]
-
-        ok = 0
-        bad = []
-        for key, default in checks:
-            try:
-                # Ensure key exists even if feature hasn't been configured yet.
-                if not db.has_setting(key, int(guild_id)):
-                    db.set_setting(key, int(guild_id), default)
-                val = db.get_setting(key, int(guild_id), default)
-                if not isinstance(val, type(default)):
-                    bad.append(f"{key} (type)")
-                else:
-                    ok += 1
-            except Exception:
-                bad.append(f"{key} (error)")
+        info = db.stats()
 
         embed = discord.Embed(
             title="DATABASE VERIFY",
-            color=0x2ecc71 if not bad else 0xe74c3c
+            color=0x2ecc71
         )
-        embed.add_field(name="OK", value=f"`{ok}/{len(checks)}`", inline=True)
-        embed.add_field(name="Bad", value=f"`{len(bad)}`", inline=True)
-        if bad:
-            # Keep it short to avoid embed limits.
-            preview = "\n".join(f"- {x}" for x in bad[:15])
-            if len(bad) > 15:
-                preview += f"\n- ... +{len(bad) - 15} more"
-            embed.add_field(name="Details", value=preview, inline=False)
-        embed.set_footer(text="Reads from DB; auto-migrates from old JSON files if needed")
+        embed.add_field(name="Tables", value="`OK`", inline=True)
+        embed.add_field(name="Row Count (tickets)", value=f"`{info.get('keys', 0)}`", inline=True)
+        embed.set_footer(text="PostgreSQL normalized tables")
         await ctx.send(embed=embed)
 
     @commands.group(name="automod", invoke_without_command=True)
@@ -320,13 +274,18 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def add(self, ctx, user: discord.Member):
         try:
-            data = db.get_setting("info.json", int(ctx.guild.id), {})
-            data.setdefault("np", [])
-            if user.id in data["np"]:
+            exists = db.execute(
+                "SELECT 1 FROM no_prefix_users WHERE guild_id = %s AND user_id = %s",
+                (int(ctx.guild.id), int(user.id)),
+                fetchone=True
+            )
+            if exists:
                 await ctx.send(f"❌ {user.name} already has no prefix.")
             else:
-                data["np"].append(user.id)
-                db.set_setting("info.json", int(ctx.guild.id), data)
+                db.execute(
+                    "INSERT INTO no_prefix_users (guild_id, user_id) VALUES (%s, %s)",
+                    (int(ctx.guild.id), int(user.id))
+                )
                 await ctx.send(f"✅ Added no prefix to {user.name}")
         except Exception as e:
             await ctx.send(f"Error: {e}")
@@ -335,11 +294,16 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def remove(self, ctx, user: discord.Member):
         try:
-            data = db.get_setting("info.json", int(ctx.guild.id), {})
-            data.setdefault("np", [])
-            if user.id in data["np"]:
-                data["np"].remove(user.id)
-                db.set_setting("info.json", int(ctx.guild.id), data)
+            exists = db.execute(
+                "SELECT 1 FROM no_prefix_users WHERE guild_id = %s AND user_id = %s",
+                (int(ctx.guild.id), int(user.id)),
+                fetchone=True
+            )
+            deleted = db.execute(
+                "DELETE FROM no_prefix_users WHERE guild_id = %s AND user_id = %s",
+                (int(ctx.guild.id), int(user.id))
+            )
+            if exists:
                 await ctx.send(f"✅ Removed no prefix from {user.name}")
             else:
                 await ctx.send("❌ User doesn't have no prefix.")

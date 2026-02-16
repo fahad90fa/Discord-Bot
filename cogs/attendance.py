@@ -12,28 +12,94 @@ ATTENDANCE_BATCHES_FILE = "attendance_batches.json"
 ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
 def load_attendance_data(guild_id: str):
-    return db.get_setting(ATTENDANCE_FILE, int(guild_id), {})
-
-def save_attendance_data(guild_id: str, data: dict):
-    db.set_setting(ATTENDANCE_FILE, int(guild_id), data)
-
-def load_attendance_config(guild_id: str):
-    return db.get_setting(ATTENDANCE_CONFIG_FILE, int(guild_id), {})
-
-def save_attendance_config(guild_id: str, data: dict):
-    db.set_setting(ATTENDANCE_CONFIG_FILE, int(guild_id), data)
-
-def load_attendance_batches(guild_id: str):
-    data = db.get_setting(ATTENDANCE_BATCHES_FILE, int(guild_id), {})
-    if not isinstance(data, dict):
-        data = {}
-    data.setdefault("batches", [])
-    data.setdefault("batch_names", {})
-
+    rows = db.execute(
+        "SELECT role_id, date_key, user_id, status, time_label, username FROM attendance_records WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    data = {}
+    for r in rows:
+        role_id = str(r["role_id"])
+        date_key = r["date_key"]
+        user_id = str(r["user_id"])
+        data.setdefault(role_id, {}).setdefault(date_key, {})[user_id] = {
+            "status": r["status"],
+            "time": r["time_label"],
+            "username": r["username"]
+        }
     return data
 
+def save_attendance_data(guild_id: str, data: dict):
+    gid = int(guild_id)
+    db.execute("DELETE FROM attendance_records WHERE guild_id = %s", (gid,))
+    for role_id, dates in (data or {}).items():
+        for date_key, users in (dates or {}).items():
+            for user_id, record in (users or {}).items():
+                db.execute(
+                    """
+                    INSERT INTO attendance_records
+                    (guild_id, role_id, date_key, user_id, status, time_label, username)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        gid, int(role_id), str(date_key), int(user_id),
+                        str(record.get("status", "present")),
+                        record.get("time"),
+                        record.get("username")
+                    )
+                )
+
+def load_attendance_config(guild_id: str):
+    row = db.execute(
+        "SELECT channel_id, log_channel_id, attendance_message_id FROM attendance_config WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    )
+    if not row:
+        return {}
+    return {
+        "channel": str(row["channel_id"]) if row["channel_id"] else None,
+        "log_channel": str(row["log_channel_id"]) if row["log_channel_id"] else None,
+        "attendance_message": str(row["attendance_message_id"]) if row["attendance_message_id"] else None
+    }
+
+def save_attendance_config(guild_id: str, data: dict):
+    db.execute(
+        """
+        INSERT INTO attendance_config (guild_id, channel_id, log_channel_id, attendance_message_id)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (guild_id) DO UPDATE SET
+          channel_id = EXCLUDED.channel_id,
+          log_channel_id = EXCLUDED.log_channel_id,
+          attendance_message_id = EXCLUDED.attendance_message_id
+        """,
+        (
+            int(guild_id),
+            int(data["channel"]) if data.get("channel") else None,
+            int(data["log_channel"]) if data.get("log_channel") else None,
+            int(data["attendance_message"]) if data.get("attendance_message") else None
+        )
+    )
+
+def load_attendance_batches(guild_id: str):
+    rows = db.execute(
+        "SELECT role_id, batch_name FROM attendance_batches WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    batches = [str(r["role_id"]) for r in rows]
+    batch_names = {str(r["role_id"]): r["batch_name"] for r in rows}
+    return {"batches": batches, "batch_names": batch_names}
+
 def save_attendance_batches(guild_id: str, data: dict):
-    db.set_setting(ATTENDANCE_BATCHES_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM attendance_batches WHERE guild_id = %s", (gid,))
+    for role_id in (data.get("batches") or []):
+        name = (data.get("batch_names") or {}).get(role_id, "Unknown Batch")
+        db.execute(
+            "INSERT INTO attendance_batches (guild_id, role_id, batch_name) VALUES (%s, %s, %s)",
+            (gid, int(role_id), str(name))
+        )
 
 
 def get_user_day_status(day_data: dict, user_id: str):

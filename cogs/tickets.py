@@ -10,22 +10,96 @@ MAX_TRANSCRIPT_MESSAGES = 2000
 
 
 def _load_config(guild_id):
-    data = db.get_setting(TICKET_FILE, int(guild_id), {})
-    if not isinstance(data, dict):
-        data = {}
-    data.setdefault("panel_channel_id", None)
-    data.setdefault("category_id", None)
-    data.setdefault("log_channel_id", None)
-    data.setdefault("staff_roles", [])
-    data.setdefault("reason_prompts", ["Support", "Billing", "Technical", "Other"])
-    data.setdefault("auto_close_hours", 0)
-    data.setdefault("panel_message_id", None)
-    data.setdefault("open_tickets", {})
-    return data
+    gid = int(guild_id)
+    cfg = db.execute(
+        "SELECT panel_channel_id, log_channel_id, category_id, auto_close_hours FROM tickets_config WHERE guild_id = %s",
+        (gid,),
+        fetchone=True
+    ) or {}
+    staff_rows = db.execute(
+        "SELECT role_id FROM ticket_staff_roles WHERE guild_id = %s",
+        (gid,),
+        fetchall=True
+    ) or []
+    reason_rows = db.execute(
+        "SELECT reason FROM ticket_reasons WHERE guild_id = %s",
+        (gid,),
+        fetchall=True
+    ) or []
+    ticket_rows = db.execute(
+        "SELECT channel_id, user_id, created_at, last_activity, reason FROM tickets WHERE guild_id = %s",
+        (gid,),
+        fetchall=True
+    ) or []
+    open_tickets = {}
+    for r in ticket_rows:
+        open_tickets[str(r["channel_id"])] = {
+            "user_id": str(r["user_id"]),
+            "created_at": r["created_at"],
+            "last_activity": r["last_activity"],
+            "reason": r["reason"]
+        }
+    return {
+        "panel_channel_id": cfg.get("panel_channel_id"),
+        "log_channel_id": cfg.get("log_channel_id"),
+        "category_id": cfg.get("category_id"),
+        "auto_close_hours": cfg.get("auto_close_hours", 0),
+        "staff_roles": [str(r["role_id"]) for r in staff_rows],
+        "reason_prompts": [r["reason"] for r in reason_rows] or ["Support", "Billing", "Technical", "Other"],
+        "panel_message_id": None,
+        "open_tickets": open_tickets
+    }
 
 
 def _save_config(guild_id, data):
-    db.set_setting(TICKET_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute(
+        """
+        INSERT INTO tickets_config (guild_id, panel_channel_id, log_channel_id, category_id, auto_close_hours)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (guild_id)
+        DO UPDATE SET panel_channel_id = EXCLUDED.panel_channel_id,
+          log_channel_id = EXCLUDED.log_channel_id,
+          category_id = EXCLUDED.category_id,
+          auto_close_hours = EXCLUDED.auto_close_hours
+        """,
+        (gid,
+         int(data["panel_channel_id"]) if data.get("panel_channel_id") else None,
+         int(data["log_channel_id"]) if data.get("log_channel_id") else None,
+         int(data["category_id"]) if data.get("category_id") else None,
+         int(data.get("auto_close_hours", 0)))
+    )
+
+    db.execute("DELETE FROM ticket_staff_roles WHERE guild_id = %s", (gid,))
+    for rid in data.get("staff_roles", []):
+        db.execute(
+            "INSERT INTO ticket_staff_roles (guild_id, role_id) VALUES (%s, %s)",
+            (gid, int(rid))
+        )
+
+    db.execute("DELETE FROM ticket_reasons WHERE guild_id = %s", (gid,))
+    for reason in data.get("reason_prompts", []):
+        db.execute(
+            "INSERT INTO ticket_reasons (guild_id, reason) VALUES (%s, %s)",
+            (gid, str(reason))
+        )
+
+    db.execute("DELETE FROM tickets WHERE guild_id = %s", (gid,))
+    for ch_id, info in data.get("open_tickets", {}).items():
+        db.execute(
+            """
+            INSERT INTO tickets (guild_id, channel_id, user_id, created_at, last_activity, reason)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                gid,
+                int(ch_id),
+                int(info.get("user_id")),
+                info.get("created_at"),
+                info.get("last_activity") or info.get("created_at"),
+                info.get("reason")
+            )
+        )
 
 
 def _ticket_owner_from_name(name: str) -> str | None:

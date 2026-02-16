@@ -9,11 +9,42 @@ ANNOUNCE_FILE = "scheduled_announcements.json"
 
 
 def _load_json(guild_id, default):
-    return db.get_setting(ANNOUNCE_FILE, int(guild_id), default)
+    rows = db.execute(
+        "SELECT id, channel_id, run_at, content, sent, sent_at FROM announcements WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    items = []
+    for r in rows:
+        items.append({
+            "id": r["id"],
+            "channel_id": str(r["channel_id"]),
+            "run_at": r["run_at"],
+            "content": r["content"],
+            "sent": r["sent"],
+            "sent_at": r["sent_at"]
+        })
+    return {"items": items} if items else default
 
 
 def _save_json(guild_id, data):
-    db.set_setting(ANNOUNCE_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM announcements WHERE guild_id = %s", (gid,))
+    for item in (data.get("items") or []):
+        db.execute(
+            """
+            INSERT INTO announcements (guild_id, channel_id, run_at, content, sent, sent_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                gid,
+                int(item["channel_id"]),
+                item.get("run_at"),
+                item.get("content"),
+                bool(item.get("sent", False)),
+                item.get("sent_at")
+            )
+        )
 
 
 def _utcnow():

@@ -4,7 +4,7 @@ import json
 import os
 import asyncio
 from dotenv import load_dotenv
-from cogs.utils import load_json
+import db
 import db
 
 # Load environment variables
@@ -17,12 +17,12 @@ PREFIXES = ["-", ""]
 
 def get_prefix(bot, message):
     try:
-        data = load_json("info.json")
-        no_prefix_users = data.get("np", [])
-        if message.author.id in no_prefix_users:
-            return PREFIXES
-        else:
-            return "-"
+        row = db.execute(
+            "SELECT 1 FROM no_prefix_users WHERE guild_id = %s AND user_id = %s",
+            (int(message.guild.id), int(message.author.id)),
+            fetchone=True
+        )
+        return PREFIXES if row else "-"
     except:
         return "-"
 

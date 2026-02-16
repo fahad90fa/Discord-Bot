@@ -237,3 +237,22 @@ CREATE TABLE IF NOT EXISTS snipe_cache (
   reply_to_message_id BIGINT,
   reply_to_author_id BIGINT
 );
+
+CREATE TABLE IF NOT EXISTS bot_role_members (
+  guild_id BIGINT NOT NULL,
+  role TEXT NOT NULL,
+  user_id BIGINT NOT NULL,
+  PRIMARY KEY (guild_id, role, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS no_prefix_users (
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_keys (
+  key_name TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

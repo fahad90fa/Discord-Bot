@@ -10,11 +10,55 @@ GIVEAWAYS_FILE = "giveaways.json"
 
 
 def _load_json(guild_id, default):
-    return db.get_setting(GIVEAWAYS_FILE, int(guild_id), default)
+    rows = db.execute(
+        "SELECT * FROM giveaways WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    giveaways = []
+    for r in rows:
+        giveaways.append({
+            "guild_id": r["guild_id"],
+            "message_id": str(r["message_id"]),
+            "channel_id": str(r["channel_id"]),
+            "prize": r["prize"],
+            "winners": r["winners"],
+            "ends_at": r["ends_at"],
+            "required_role_id": r["required_role_id"],
+            "min_join_seconds": r["min_join_seconds"],
+            "active": r["active"],
+            "created_at": r["created_at"],
+            "ended_at": r["ended_at"],
+            "winner_ids": [int(x) for x in (r["winner_ids"] or "").split(",") if x] if r.get("winner_ids") is not None else []
+        })
+    return {"giveaways": giveaways} if giveaways else default
 
 
 def _save_json(guild_id, data):
-    db.set_setting(GIVEAWAYS_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM giveaways WHERE guild_id = %s", (gid,))
+    for gw in (data.get("giveaways") or []):
+        db.execute(
+            """
+            INSERT INTO giveaways
+            (guild_id, message_id, channel_id, prize, winners, ends_at, required_role_id, min_join_seconds, active, created_at, ended_at, winner_ids)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                gid,
+                int(gw["message_id"]),
+                int(gw["channel_id"]),
+                gw.get("prize"),
+                int(gw.get("winners", 1)),
+                gw.get("ends_at"),
+                int(gw["required_role_id"]) if gw.get("required_role_id") else None,
+                int(gw.get("min_join_seconds", 0) or 0),
+                bool(gw.get("active", True)),
+                gw.get("created_at"),
+                gw.get("ended_at"),
+                ",".join(str(x) for x in gw.get("winner_ids", [])) if isinstance(gw.get("winner_ids"), list) else (gw.get("winner_ids") or "")
+            )
+        )
 
 
 def parse_duration(s: str) -> int:

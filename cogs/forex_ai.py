@@ -3,6 +3,7 @@ from discord.ext import commands
 import aiohttp
 import db
 import re
+from datetime import datetime
 
 # Groq (OpenAI-compatible) API Configuration
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -80,7 +81,12 @@ class ForexAI(commands.Cog):
 
     def _get_groq_key(self) -> str | None:
         try:
-            return db.get_setting(GROQ_DB_KEY, None, None)
+            row = db.execute(
+                "SELECT value FROM ai_keys WHERE key_name = %s",
+                (GROQ_DB_KEY,),
+                fetchone=True
+            )
+            return row["value"] if row else None
         except Exception:
             return None
 
@@ -148,7 +154,14 @@ class ForexAI(commands.Cog):
         """Store Groq API key in DB (Owner Only)"""
         if not key or len(key) < 20:
             return await ctx.send("❌ Invalid key.")
-        db.set_setting(GROQ_DB_KEY, None, key.strip())
+        db.execute(
+            """
+            INSERT INTO ai_keys (key_name, value, updated_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (key_name) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
+            """,
+            (GROQ_DB_KEY, key.strip(), datetime.utcnow().isoformat())
+        )
         embed = discord.Embed(
             title="✅ AI KEY SAVED",
             description="Groq API key saved in database.",
@@ -172,7 +185,7 @@ class ForexAI(commands.Cog):
     @commands.is_owner()
     async def aikey_clear(self, ctx):
         """Remove Groq API key from DB (Owner Only)"""
-        db.delete_setting(GROQ_DB_KEY, None)
+        db.execute("DELETE FROM ai_keys WHERE key_name = %s", (GROQ_DB_KEY,))
         await ctx.send("✅ AI key cleared.")
 
     @commands.command(name="ask", aliases=["ai", "forex"])

@@ -12,15 +12,6 @@ from .utils import load_data, send_modlog, is_owner_check
 SNIPE_FILE = "snipe_cache.json"
 MAX_SNIPES_PER_CHANNEL = 20
 
-def _load_snipes(guild_id):
-    data = db.get_setting(SNIPE_FILE, int(guild_id), {})
-    if not isinstance(data, dict):
-        data = {}
-    return data
-
-def _save_snipes(guild_id, data):
-    db.set_setting(SNIPE_FILE, int(guild_id), data)
-
 def _trim_snipes(snipes, max_len):
     if len(snipes) <= max_len:
         return snipes
@@ -45,8 +36,7 @@ class Utility(commands.Cog):
 
         guild_id = str(message.guild.id)
         channel_id = str(message.channel.id)
-        snipes = _load_snipes(guild_id)
-        channel_snipes = snipes.get(channel_id, [])
+        # insert into table
 
         attachments = []
         for a in (message.attachments or []):
@@ -70,20 +60,27 @@ class Utility(commands.Cog):
                 "author_id": str(message.reference.resolved.author.id) if message.reference.resolved and message.reference.resolved.author else None
             }
 
-        channel_snipes.append({
-            "message_id": str(message.id),
-            "author_id": str(message.author.id) if message.author else None,
-            "author_name": str(message.author) if message.author else "Unknown",
-            "content": message.content or "",
-            "attachments": attachments,
-            "stickers": stickers,
-            "created_at": message.created_at.isoformat() if message.created_at else None,
-            "deleted_at": datetime.utcnow().isoformat(),
-            "reply_to": reply_info
-        })
-
-        snipes[channel_id] = _trim_snipes(channel_snipes, MAX_SNIPES_PER_CHANNEL)
-        _save_snipes(guild_id, snipes)
+        db.execute(
+            """
+            INSERT INTO snipe_cache
+            (guild_id, channel_id, message_id, author_id, author_name, content, attachments, stickers, created_at, deleted_at, reply_to_message_id, reply_to_author_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                int(guild_id),
+                int(channel_id),
+                int(message.id),
+                int(message.author.id) if message.author else None,
+                str(message.author) if message.author else "Unknown",
+                message.content or "",
+                ",".join(a["url"] for a in attachments),
+                ",".join(s["url"] for s in stickers),
+                message.created_at.isoformat() if message.created_at else None,
+                datetime.utcnow().isoformat(),
+                int(reply_info["message_id"]) if reply_info and reply_info.get("message_id") else None,
+                int(reply_info["author_id"]) if reply_info and reply_info.get("author_id") else None
+            )
+        )
 
     @commands.command(name="snipe")
     @commands.guild_only()
@@ -93,15 +90,23 @@ class Utility(commands.Cog):
         if index < 1:
             return await ctx.send("❌ Index must be 1 or higher.")
 
-        snipes = _load_snipes(ctx.guild.id)
-        channel_snipes = snipes.get(str(channel.id), [])
+        channel_snipes = db.execute(
+            """
+            SELECT * FROM snipe_cache
+            WHERE guild_id = %s AND channel_id = %s
+            ORDER BY deleted_at DESC
+            LIMIT %s
+            """,
+            (int(ctx.guild.id), int(channel.id), MAX_SNIPES_PER_CHANNEL),
+            fetchall=True
+        ) or []
         if not channel_snipes:
             return await ctx.send("❌ Nothing to snipe in this channel.")
 
         if index > len(channel_snipes):
             return await ctx.send(f"❌ Only {len(channel_snipes)} snipes available for this channel.")
 
-        item = channel_snipes[-index]
+        item = channel_snipes[index - 1]
 
         embed = discord.Embed(
             title="🛰️ SNIPE CAPTURE",
@@ -118,18 +123,19 @@ class Utility(commands.Cog):
         embed.add_field(name="Content", value=content, inline=False)
 
         if item.get("attachments"):
-            files = "\n".join(f"- {a.get('filename','file')} ({a.get('url','')})" for a in item["attachments"][:5])
+            urls = [u for u in (item.get("attachments") or "").split(",") if u]
+            files = "\n".join(f"- {u}" for u in urls[:5])
             embed.add_field(name="Attachments", value=files, inline=False)
 
         if item.get("stickers"):
-            st = "\n".join(f"- {s.get('name','sticker')} ({s.get('url','')})" for s in item["stickers"][:5])
+            urls = [u for u in (item.get("stickers") or "").split(",") if u]
+            st = "\n".join(f"- {u}" for u in urls[:5])
             embed.add_field(name="Stickers", value=st, inline=False)
 
-        if item.get("reply_to"):
-            r = item["reply_to"]
-            reply_text = f"Message ID: `{r.get('message_id')}`"
-            if r.get("author_id"):
-                reply_text += f"\nAuthor: <@{r.get('author_id')}>"
+        if item.get("reply_to_message_id"):
+            reply_text = f"Message ID: `{item.get('reply_to_message_id')}`"
+            if item.get("reply_to_author_id"):
+                reply_text += f"\nAuthor: <@{item.get('reply_to_author_id')}>"
             embed.add_field(name="Reply To", value=reply_text, inline=False)
 
         if item.get("created_at"):

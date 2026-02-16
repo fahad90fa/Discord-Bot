@@ -16,44 +16,138 @@ LOG_CHANNEL_FILE = "log_channel.json"
 
 def get_points(guild_id):
     """Load points data"""
-    return db.get_setting(POINTS_FILE, int(guild_id), {})
+    rows = db.execute(
+        "SELECT user_id, points, name, username, last_updated FROM union_points WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    data = {}
+    for r in rows:
+        data[str(r["user_id"])] = {
+            "points": r["points"],
+            "name": r["name"],
+            "username": r["username"],
+            "last_updated": r["last_updated"]
+        }
+    return data
 
 def save_points(guild_id, data):
     """Save points data"""
-    db.set_setting(POINTS_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM union_points WHERE guild_id = %s", (gid,))
+    for user_id, row in (data or {}).items():
+        db.execute(
+            """
+            INSERT INTO union_points (guild_id, user_id, points, name, username, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (gid, int(user_id), int(row.get("points", 0)), row.get("name"), row.get("username"), row.get("last_updated"))
+        )
 
 def get_logs(guild_id):
     """Load logs data"""
-    return db.get_setting(LOGS_FILE, int(guild_id), [])
+    rows = db.execute(
+        "SELECT timestamp, manager_id, manager_name, action, target_id, target_name, points, reason FROM union_logs WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    return [
+        {
+            "timestamp": r["timestamp"],
+            "manager_id": r["manager_id"],
+            "manager_name": r["manager_name"],
+            "action": r["action"],
+            "target_id": r["target_id"],
+            "target_name": r["target_name"],
+            "points": r["points"],
+            "reason": r["reason"]
+        }
+        for r in rows
+    ]
 
 def save_logs(guild_id, data):
     """Save logs data"""
-    db.set_setting(LOGS_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM union_logs WHERE guild_id = %s", (gid,))
+    for row in (data or []):
+        db.execute(
+            """
+            INSERT INTO union_logs (guild_id, timestamp, manager_id, manager_name, action, target_id, target_name, points, reason)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                gid,
+                row.get("timestamp"),
+                int(row.get("manager_id", 0)),
+                row.get("manager_name"),
+                row.get("action"),
+                int(row.get("target_id", 0)),
+                row.get("target_name"),
+                int(row.get("points", 0)),
+                row.get("reason"),
+            )
+        )
 
 def get_managers(guild_id):
     """Load manager list"""
-    return db.get_setting(MANAGERS_FILE, int(guild_id), [])
+    rows = db.execute(
+        "SELECT user_id FROM union_managers WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchall=True
+    ) or []
+    return [int(r["user_id"]) for r in rows]
 
 def save_managers(guild_id, data):
     """Save manager list"""
-    db.set_setting(MANAGERS_FILE, int(guild_id), data)
+    gid = int(guild_id)
+    db.execute("DELETE FROM union_managers WHERE guild_id = %s", (gid,))
+    for user_id in (data or []):
+        db.execute(
+            "INSERT INTO union_managers (guild_id, user_id) VALUES (%s, %s)",
+            (gid, int(user_id))
+        )
 
 def get_lb_config(guild_id):
     """Load leaderboard config"""
-    return db.get_setting(LB_CONFIG_FILE, int(guild_id), {})
+    row = db.execute(
+        "SELECT channel_id, message_id FROM union_leaderboard_config WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    )
+    if not row:
+        return {}
+    return {"channel_id": row["channel_id"], "message_id": row["message_id"]}
 
 def save_lb_config(guild_id, data):
     """Save leaderboard config"""
-    db.set_setting(LB_CONFIG_FILE, int(guild_id), data)
+    db.execute(
+        """
+        INSERT INTO union_leaderboard_config (guild_id, channel_id, message_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id
+        """,
+        (int(guild_id), data.get("channel_id"), data.get("message_id"))
+    )
 
 def get_log_channel(guild_id):
     """Get log channel ID"""
-    config = db.get_setting(LOG_CHANNEL_FILE, int(guild_id), {})
-    return config.get("channel_id")
+    row = db.execute(
+        "SELECT channel_id FROM union_log_channel WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    )
+    return row["channel_id"] if row else None
 
 def set_log_channel(guild_id, channel_id):
     """Set log channel ID"""
-    db.set_setting(LOG_CHANNEL_FILE, int(guild_id), {"channel_id": channel_id})
+    db.execute(
+        """
+        INSERT INTO union_log_channel (guild_id, channel_id)
+        VALUES (%s, %s)
+        ON CONFLICT (guild_id) DO UPDATE SET channel_id = EXCLUDED.channel_id
+        """,
+        (int(guild_id), int(channel_id))
+    )
 
 def log_action(guild_id, manager_id, manager_name, action, target_id, target_name, points, reason):
     """Log manager action"""

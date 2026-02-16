@@ -5,7 +5,7 @@ from datetime import timedelta
 from collections import defaultdict
 from .utils import (
     load_afk, save_afk,
-    load_json_guild, save_json_guild,
+    get_welcome_channel, set_welcome_channel,
     get_antilink_config, load_data,
     get_antispam_config, get_automod_config
 )
@@ -28,8 +28,7 @@ class Events(commands.Cog):
             return
             
         guild_id = str(member.guild.id)
-        welcome_config = load_json_guild(WELCOME_FILE, guild_id, {})
-        channel_id = welcome_config.get("channel")
+        channel_id = get_welcome_channel(guild_id)
         if not channel_id:
             return
             
@@ -115,7 +114,7 @@ class Events(commands.Cog):
         
         if channel is None:
             # Disable welcome messages
-            save_json_guild(WELCOME_FILE, guild_id, {})
+            set_welcome_channel(guild_id, None)
                 
             embed = discord.Embed(
                 title="⚙️ WELCOME SYSTEM",
@@ -129,7 +128,7 @@ class Events(commands.Cog):
             )
         else:
             # Enable welcome messages for the specified channel
-            save_json_guild(WELCOME_FILE, guild_id, {"channel": str(channel.id)})
+            set_welcome_channel(guild_id, channel.id)
             
             embed = discord.Embed(
                 title="⚙️ WELCOME SYSTEM",
