@@ -14,30 +14,23 @@ ANTISPAM_FILE = "antispam.json"
 AUTOMOD_FILE = "automod.json"
 
 def load_json(filename):
-    # Auto-migrate from existing JSON file into DB on first access.
-    return db.get_json(filename, {}, migrate_file=filename)
+    return db.get_setting(filename, None, {})
 
 def save_json(filename, data):
-    db.set_json(filename, data)
+    db.set_setting(filename, None, data)
 
 def load_json_guild(filename, guild_id, default=None):
     if default is None:
         default = {}
-    return db.get_json_scoped(filename, str(guild_id), default, migrate_file=filename)
+    return db.get_setting(filename, int(guild_id), default)
 
 def save_json_guild(filename, guild_id, data):
-    db.set_json_scoped(filename, str(guild_id), data)
+    db.set_setting(filename, int(guild_id), data)
 
 def load_afk(guild_id=None):
     if guild_id is None:
         return load_json(AFK_FILE)
-    data = load_json_guild(AFK_FILE, guild_id, {})
-    if not data:
-        legacy = load_json(AFK_FILE)
-        if isinstance(legacy, dict) and legacy:
-            save_json_guild(AFK_FILE, guild_id, legacy)
-            return legacy
-    return data
+    return load_json_guild(AFK_FILE, guild_id, {})
 
 def save_afk(data, guild_id=None):
     if guild_id is None:
@@ -47,13 +40,7 @@ def save_afk(data, guild_id=None):
 def load_ban_limits(guild_id=None):
     if guild_id is None:
         return load_json(BAN_LIMIT_FILE)
-    data = load_json_guild(BAN_LIMIT_FILE, guild_id, {})
-    if not data:
-        legacy = load_json(BAN_LIMIT_FILE)
-        if isinstance(legacy, dict) and legacy:
-            save_json_guild(BAN_LIMIT_FILE, guild_id, legacy)
-            return legacy
-    return data
+    return load_json_guild(BAN_LIMIT_FILE, guild_id, {})
 
 def save_ban_limits(data, guild_id=None):
     if guild_id is None:
@@ -63,13 +50,7 @@ def save_ban_limits(data, guild_id=None):
 def load_data(guild_id=None):
     if guild_id is None:
         return load_json(FILE)
-    data = load_json_guild(FILE, guild_id, {"owners": [], "admins": [], "mods": []})
-    if data == {"owners": [], "admins": [], "mods": []}:
-        legacy = load_json(FILE)
-        if isinstance(legacy, dict) and legacy:
-            save_json_guild(FILE, guild_id, legacy)
-            return legacy
-    return data
+    return load_json_guild(FILE, guild_id, {"owners": [], "admins": [], "mods": []})
 
 def save_data(data, guild_id=None):
     if guild_id is None:
@@ -107,17 +88,7 @@ def set_reminder_channel(channel_id):
 
 def get_news_channel_guild(guild_id):
     data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
-    if "news_channel" in data:
-        return data.get("news_channel")
-    # Legacy global schema migration
-    legacy = db.get_json(NEWS_CONFIG_FILE, {}, migrate_file=NEWS_CONFIG_FILE)
-    if isinstance(legacy, dict) and legacy.get("news_channel"):
-        data["news_channel"] = legacy.get("news_channel")
-        if legacy.get("reminder_channel"):
-            data["reminder_channel"] = legacy.get("reminder_channel")
-        save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
-        return data.get("news_channel")
-    return None
+    return data.get("news_channel")
 
 def set_news_channel_guild(guild_id, channel_id):
     data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
@@ -126,17 +97,7 @@ def set_news_channel_guild(guild_id, channel_id):
 
 def get_reminder_channel_guild(guild_id):
     data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})
-    if "reminder_channel" in data:
-        return data.get("reminder_channel")
-    # Legacy global schema migration
-    legacy = db.get_json(NEWS_CONFIG_FILE, {}, migrate_file=NEWS_CONFIG_FILE)
-    if isinstance(legacy, dict) and legacy.get("reminder_channel"):
-        data["reminder_channel"] = legacy.get("reminder_channel")
-        if legacy.get("news_channel"):
-            data["news_channel"] = legacy.get("news_channel")
-        save_json_guild(NEWS_CONFIG_FILE, guild_id, data)
-        return data.get("reminder_channel")
-    return None
+    return data.get("reminder_channel")
 
 def set_reminder_channel_guild(guild_id, channel_id):
     data = load_json_guild(NEWS_CONFIG_FILE, guild_id, {})

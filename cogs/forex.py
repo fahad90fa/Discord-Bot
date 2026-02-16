@@ -20,14 +20,14 @@ from .utils import (
 )
 
 def load_sent_news(guild_id):
-    return db.get_json_scoped(SENT_NEWS_FILE, str(guild_id), {}, migrate_file=SENT_NEWS_FILE)
+    return db.get_setting(SENT_NEWS_FILE, int(guild_id), {})
 
 def save_sent_news(guild_id, data):
-    db.set_json_scoped(SENT_NEWS_FILE, str(guild_id), data)
+    db.set_setting(SENT_NEWS_FILE, int(guild_id), data)
 
 def load_session_alert_config(guild_id):
     default = {"channel_id": None, "last_sent": {}, "roles": {"session": None, "news": None}}
-    data = db.get_json_scoped(SESSION_ALERT_FILE, str(guild_id), default, migrate_file=SESSION_ALERT_FILE)
+    data = db.get_setting(SESSION_ALERT_FILE, int(guild_id), default)
     data.setdefault("channel_id", None)
     data.setdefault("last_sent", {})
     roles = data.setdefault("roles", {})
@@ -37,46 +37,10 @@ def load_session_alert_config(guild_id):
         roles.setdefault("session", None)
         roles.setdefault("news", None)
 
-    # Migration from legacy global schema (channels/roles keyed by guild).
-    if not data.get("channel_id") and data.get("last_sent") == {}:
-        legacy = db.get_json(SESSION_ALERT_FILE, {}, migrate_file=SESSION_ALERT_FILE)
-        if isinstance(legacy, dict):
-            migrated = False
-            channels = legacy.get("channels", {})
-            if isinstance(channels, dict):
-                ch_id = channels.get(str(guild_id))
-                if ch_id:
-                    data["channel_id"] = ch_id
-                    migrated = True
-
-            legacy_roles = legacy.get("roles", {})
-            if isinstance(legacy_roles, dict):
-                session_role = legacy_roles.get("session", {})
-                news_role = legacy_roles.get("news", {})
-                if isinstance(session_role, dict):
-                    rid = session_role.get(str(guild_id))
-                    if rid:
-                        data["roles"]["session"] = rid
-                        migrated = True
-                if isinstance(news_role, dict):
-                    rid = news_role.get(str(guild_id))
-                    if rid:
-                        data["roles"]["news"] = rid
-                        migrated = True
-
-            legacy_last = legacy.get("last_sent", {})
-            if isinstance(legacy_last, dict):
-                last_for_guild = legacy_last.get(str(guild_id))
-                if isinstance(last_for_guild, dict) and last_for_guild:
-                    data["last_sent"] = last_for_guild
-                    migrated = True
-
-            if migrated:
-                save_session_alert_config(guild_id, data)
     return data
 
 def save_session_alert_config(guild_id, data):
-    db.set_json_scoped(SESSION_ALERT_FILE, str(guild_id), data)
+    db.set_setting(SESSION_ALERT_FILE, int(guild_id), data)
 
 def get_session_open_utc(now_utc, tz_name, hour, minute=0):
     """Return session open time for current local day in UTC + local datetime."""
@@ -112,7 +76,7 @@ LAST_FETCH_TIME = None
 
 def load_cache_from_file():
     global NEWS_CACHE, LAST_FETCH_TIME
-    data = db.get_json(CACHE_FILE, {}, migrate_file=CACHE_FILE)
+    data = db.get_setting(CACHE_FILE, None, {})
     if isinstance(data, dict) and "news" in data:
         NEWS_CACHE = data.get("news", [])
         fetch_time_str = data.get("fetch_time")
@@ -128,7 +92,7 @@ def load_cache_from_file():
 
 def save_cache_to_file():
     try:
-        db.set_json(CACHE_FILE, {
+        db.set_setting(CACHE_FILE, None, {
             "news": NEWS_CACHE,
             "fetch_time": LAST_FETCH_TIME.isoformat() if LAST_FETCH_TIME else None
         })
@@ -231,7 +195,7 @@ async def fetch_news_data(force=False, prefer_local_xml=True):
         NEWS_CACHE = []
         LAST_FETCH_TIME = None
         try:
-            db.delete_key(CACHE_FILE)
+            db.delete_setting(CACHE_FILE, None)
         except Exception:
             pass
 
@@ -982,7 +946,7 @@ class ForexNews(commands.Cog):
         
         # Delete cache file to ensure clean slate
         try:
-            db.delete_key(CACHE_FILE)
+            db.delete_setting(CACHE_FILE, None)
             await asyncio.sleep(0.5)
             await load_msg.edit(content="🧹 `CACHE PURGED. RE-ESTABLISHING LINK...`")
         except Exception:
@@ -1149,8 +1113,8 @@ class ForexNews(commands.Cog):
         
         for file_path, file_name in files_to_reset:
             try:
-                if db.has_key(file_path):
-                    db.delete_key(file_path)
+                if db.has_setting(file_path, None):
+                    db.delete_setting(file_path, None)
                     status_text += f"✅ `{file_name}` RESET\n"
                     reset_count += 1
                 else:

@@ -1,188 +1,128 @@
-import json
-import os
-import sqlite3
 import threading
 from datetime import datetime
 
-DEFAULT_DB_DIR = os.path.join(os.path.expanduser("~"), ".traders_union_bot")
-DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "bot_data.sqlite3")
-DB_PATH = os.getenv("BOT_DB_PATH") or DEFAULT_DB_PATH
+import psycopg2
+import psycopg2.extras as extras
+
+# Neon PostgreSQL connection (as requested).
+DB_URL = "postgresql://neondb_owner:npg_xig0brACE6hc@ep-lucky-sound-aixg6u42-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 _conn = None
 _lock = threading.Lock()
 
 
 def _connect():
-    # Ensure the directory exists for persistent storage.
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    # Better concurrency for bots with multiple tasks.
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    return conn
+    return psycopg2.connect(DB_URL)
 
 
 def init_db():
     global _conn
     with _lock:
-        if _conn is None:
+        if _conn is None or _conn.closed:
             _conn = _connect()
-        _conn.execute(
+        cur = _conn.cursor()
+        cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS kv (
-              k TEXT PRIMARY KEY,
-              v TEXT NOT NULL,
-              updated_at TEXT NOT NULL
+            CREATE TABLE IF NOT EXISTS settings (
+              k TEXT NOT NULL,
+              guild_id BIGINT NULL,
+              v JSONB NOT NULL,
+              updated_at TIMESTAMPTZ NOT NULL,
+              PRIMARY KEY (k, guild_id)
             )
             """
         )
+        cur.execute("CREATE INDEX IF NOT EXISTS settings_updated_at_idx ON settings (updated_at)")
+        cur.execute("CREATE INDEX IF NOT EXISTS settings_guild_idx ON settings (guild_id)")
         _conn.commit()
+        cur.close()
 
 
 def _ensure():
-    if _conn is None:
+    if _conn is None or _conn.closed:
         init_db()
 
 
-def _now_iso():
-    return datetime.utcnow().isoformat()
+def _now():
+    return datetime.utcnow()
 
 
-def has_key(key: str) -> bool:
+def has_setting(k: str, guild_id: int | None = None) -> bool:
     _ensure()
     with _lock:
-        row = _conn.execute("SELECT 1 FROM kv WHERE k = ?", (key,)).fetchone()
+        cur = _conn.cursor()
+        if guild_id is None:
+            cur.execute("SELECT 1 FROM settings WHERE k = %s AND guild_id IS NULL", (k,))
+        else:
+            cur.execute("SELECT 1 FROM settings WHERE k = %s AND guild_id = %s", (k, guild_id))
+        row = cur.fetchone()
+        cur.close()
         return row is not None
 
 
-def _scoped_key(key: str, scope: str | int) -> str:
-    return f"{key}::guild:{scope}"
-
-
-def has_key_scoped(key: str, scope: str | int) -> bool:
-    return has_key(_scoped_key(key, scope))
-
-
-def get_raw(key: str):
+def get_setting(k: str, guild_id: int | None, default):
     _ensure()
     with _lock:
-        row = _conn.execute("SELECT v FROM kv WHERE k = ?", (key,)).fetchone()
-        return row["v"] if row else None
+        cur = _conn.cursor()
+        if guild_id is None:
+            cur.execute("SELECT v FROM settings WHERE k = %s AND guild_id IS NULL", (k,))
+        else:
+            cur.execute("SELECT v FROM settings WHERE k = %s AND guild_id = %s", (k, guild_id))
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else default
 
 
-def set_raw(key: str, value: str):
+def set_setting(k: str, guild_id: int | None, value):
     _ensure()
     with _lock:
-        _conn.execute(
-            "INSERT INTO kv (k, v, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(k) DO UPDATE SET v = excluded.v, updated_at = excluded.updated_at",
-            (key, value, _now_iso()),
-        )
+        cur = _conn.cursor()
+        if guild_id is None:
+            cur.execute(
+                """
+                INSERT INTO settings (k, guild_id, v, updated_at)
+                VALUES (%s, NULL, %s, %s)
+                ON CONFLICT (k, guild_id)
+                DO UPDATE SET v = EXCLUDED.v, updated_at = EXCLUDED.updated_at
+                """,
+                (k, extras.Json(value), _now()),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO settings (k, guild_id, v, updated_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (k, guild_id)
+                DO UPDATE SET v = EXCLUDED.v, updated_at = EXCLUDED.updated_at
+                """,
+                (k, guild_id, extras.Json(value), _now()),
+            )
         _conn.commit()
+        cur.close()
 
 
-def delete_key(key: str):
+def delete_setting(k: str, guild_id: int | None = None):
     _ensure()
     with _lock:
-        _conn.execute("DELETE FROM kv WHERE k = ?", (key,))
+        cur = _conn.cursor()
+        if guild_id is None:
+            cur.execute("DELETE FROM settings WHERE k = %s AND guild_id IS NULL", (k,))
+        else:
+            cur.execute("DELETE FROM settings WHERE k = %s AND guild_id = %s", (k, guild_id))
         _conn.commit()
-
-
-def migrate_from_file_if_needed(key: str, file_path: str):
-    """
-    If DB key is missing and a JSON file exists, load it once and store in DB.
-    Leaves the file on disk (non-destructive migration).
-    """
-    if has_key(key):
-        return
-    if not file_path or not os.path.exists(file_path):
-        return
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return
-    try:
-        set_json(key, data)
-    except Exception:
-        return
-
-
-def get_json(key: str, default, migrate_file: str | None = None):
-    """
-    Read JSON value from DB.
-    - `default` defines the expected type (dict/list/etc).
-    - If missing, returns `default`.
-    - If `migrate_file` is set, will auto-migrate from that JSON file into DB on first read.
-    """
-    if migrate_file:
-        migrate_from_file_if_needed(key, migrate_file)
-
-    raw = get_raw(key)
-    if raw is None:
-        return default
-    try:
-        value = json.loads(raw)
-    except Exception:
-        return default
-    if not isinstance(value, type(default)):
-        return default
-    return value
-
-
-def get_json_scoped(key: str, scope: str | int, default, migrate_file: str | None = None):
-    """
-    Read JSON value from DB scoped to a guild/server.
-    Falls back to global key (optionally migrated from file) if scoped key missing
-    and the global value is a dict that contains this guild id.
-    """
-    scoped = _scoped_key(key, scope)
-    raw = get_raw(scoped)
-    if raw is not None:
-        try:
-            value = json.loads(raw)
-            return value if isinstance(value, type(default)) else default
-        except Exception:
-            return default
-
-    # Fallback to global value for one-time migration.
-    global_val = get_json(key, default, migrate_file=migrate_file)
-    if isinstance(global_val, dict):
-        v = global_val.get(str(scope))
-        if v is not None:
-            set_json(scoped, v)
-            return v
-    return default
-
-
-def set_json_scoped(key: str, scope: str | int, value):
-    set_json(_scoped_key(key, scope), value)
-
-
-def set_json(key: str, value):
-    set_raw(key, json.dumps(value, ensure_ascii=False))
+        cur.close()
 
 
 def stats():
-    """Return basic DB health info for diagnostics."""
     _ensure()
     with _lock:
-        row = _conn.execute(
-            "SELECT COUNT(*) AS cnt, MAX(updated_at) AS last_updated FROM kv"
-        ).fetchone()
-        cnt = int(row["cnt"]) if row and row["cnt"] is not None else 0
-        last_updated = row["last_updated"] if row else None
-
-    exists = os.path.exists(DB_PATH)
-    size_bytes = os.path.getsize(DB_PATH) if exists else 0
+        cur = _conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM settings")
+        count = cur.fetchone()[0]
+        cur.close()
     return {
-        "path": DB_PATH,
-        "exists": exists,
-        "size_bytes": size_bytes,
-        "keys": cnt,
-        "last_updated": last_updated,
+        "path": "postgres",
+        "size_bytes": 0,
+        "keys": count,
+        "updated_at": _now().isoformat()
     }

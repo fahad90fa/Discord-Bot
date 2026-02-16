@@ -80,7 +80,7 @@ class ForexAI(commands.Cog):
 
     def _get_groq_key(self) -> str | None:
         try:
-            return db.get_raw(GROQ_DB_KEY)
+            return db.get_setting(GROQ_DB_KEY, None, None)
         except Exception:
             return None
 
@@ -148,7 +148,7 @@ class ForexAI(commands.Cog):
         """Store Groq API key in DB (Owner Only)"""
         if not key or len(key) < 20:
             return await ctx.send("❌ Invalid key.")
-        db.set_raw(GROQ_DB_KEY, key.strip())
+        db.set_setting(GROQ_DB_KEY, None, key.strip())
         embed = discord.Embed(
             title="✅ AI KEY SAVED",
             description="Groq API key saved in database.",
@@ -172,7 +172,7 @@ class ForexAI(commands.Cog):
     @commands.is_owner()
     async def aikey_clear(self, ctx):
         """Remove Groq API key from DB (Owner Only)"""
-        db.delete_key(GROQ_DB_KEY)
+        db.delete_setting(GROQ_DB_KEY, None)
         await ctx.send("✅ AI key cleared.")
 
     @commands.command(name="ask", aliases=["ai", "forex"])

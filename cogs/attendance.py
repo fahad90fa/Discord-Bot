@@ -12,41 +12,28 @@ ATTENDANCE_BATCHES_FILE = "attendance_batches.json"
 ATTENDANCE_DATA_LOCK = asyncio.Lock()
 
 def load_attendance_data(guild_id: str):
-    return db.get_json_scoped(ATTENDANCE_FILE, guild_id, {}, migrate_file=ATTENDANCE_FILE)
+    return db.get_setting(ATTENDANCE_FILE, int(guild_id), {})
 
 def save_attendance_data(guild_id: str, data: dict):
-    db.set_json_scoped(ATTENDANCE_FILE, guild_id, data)
+    db.set_setting(ATTENDANCE_FILE, int(guild_id), data)
 
 def load_attendance_config(guild_id: str):
-    return db.get_json_scoped(ATTENDANCE_CONFIG_FILE, guild_id, {}, migrate_file=ATTENDANCE_CONFIG_FILE)
+    return db.get_setting(ATTENDANCE_CONFIG_FILE, int(guild_id), {})
 
 def save_attendance_config(guild_id: str, data: dict):
-    db.set_json_scoped(ATTENDANCE_CONFIG_FILE, guild_id, data)
+    db.set_setting(ATTENDANCE_CONFIG_FILE, int(guild_id), data)
 
 def load_attendance_batches(guild_id: str):
-    data = db.get_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, {}, migrate_file=ATTENDANCE_BATCHES_FILE)
+    data = db.get_setting(ATTENDANCE_BATCHES_FILE, int(guild_id), {})
     if not isinstance(data, dict):
         data = {}
     data.setdefault("batches", [])
     data.setdefault("batch_names", {})
 
-    # Migration: move from old config if present
-    config = load_attendance_config(guild_id)
-    if (not data.get("batches") and config.get("batches")) or (not data.get("batch_names") and config.get("batch_names")):
-        data["batches"] = config.get("batches", data.get("batches", []))
-        data["batch_names"] = config.get("batch_names", data.get("batch_names", {}))
-        # Remove legacy keys
-        if "batches" in config:
-            del config["batches"]
-        if "batch_names" in config:
-            del config["batch_names"]
-        save_attendance_config(guild_id, config)
-        db.set_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, data)
-
     return data
 
 def save_attendance_batches(guild_id: str, data: dict):
-    db.set_json_scoped(ATTENDANCE_BATCHES_FILE, guild_id, data)
+    db.set_setting(ATTENDANCE_BATCHES_FILE, int(guild_id), data)
 
 
 def get_user_day_status(day_data: dict, user_id: str):

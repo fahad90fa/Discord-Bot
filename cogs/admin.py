@@ -134,9 +134,9 @@ class Admin(commands.Cog):
         for key, default in checks:
             try:
                 # Ensure key exists even if feature hasn't been configured yet.
-                if not db.has_key_scoped(key, guild_id):
-                    db.set_json_scoped(key, guild_id, default)
-                val = db.get_json_scoped(key, guild_id, default, migrate_file=key)
+                if not db.has_setting(key, int(guild_id)):
+                    db.set_setting(key, int(guild_id), default)
+                val = db.get_setting(key, int(guild_id), default)
                 if not isinstance(val, type(default)):
                     bad.append(f"{key} (type)")
                 else:
@@ -320,13 +320,13 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def add(self, ctx, user: discord.Member):
         try:
-            data = db.get_json_scoped("info.json", str(ctx.guild.id), {}, migrate_file="info.json")
+            data = db.get_setting("info.json", int(ctx.guild.id), {})
             data.setdefault("np", [])
             if user.id in data["np"]:
                 await ctx.send(f"❌ {user.name} already has no prefix.")
             else:
                 data["np"].append(user.id)
-                db.set_json_scoped("info.json", str(ctx.guild.id), data)
+                db.set_setting("info.json", int(ctx.guild.id), data)
                 await ctx.send(f"✅ Added no prefix to {user.name}")
         except Exception as e:
             await ctx.send(f"Error: {e}")
@@ -335,11 +335,11 @@ class Admin(commands.Cog):
     @is_owner_check()
     async def remove(self, ctx, user: discord.Member):
         try:
-            data = db.get_json_scoped("info.json", str(ctx.guild.id), {}, migrate_file="info.json")
+            data = db.get_setting("info.json", int(ctx.guild.id), {})
             data.setdefault("np", [])
             if user.id in data["np"]:
                 data["np"].remove(user.id)
-                db.set_json_scoped("info.json", str(ctx.guild.id), data)
+                db.set_setting("info.json", int(ctx.guild.id), data)
                 await ctx.send(f"✅ Removed no prefix from {user.name}")
             else:
                 await ctx.send("❌ User doesn't have no prefix.")

@@ -10,7 +10,7 @@ MAX_TRANSCRIPT_MESSAGES = 2000
 
 
 def _load_config(guild_id):
-    data = db.get_json_scoped(TICKET_FILE, str(guild_id), {}, migrate_file=TICKET_FILE)
+    data = db.get_setting(TICKET_FILE, int(guild_id), {})
     if not isinstance(data, dict):
         data = {}
     data.setdefault("panel_channel_id", None)
@@ -25,7 +25,7 @@ def _load_config(guild_id):
 
 
 def _save_config(guild_id, data):
-    db.set_json_scoped(TICKET_FILE, str(guild_id), data)
+    db.set_setting(TICKET_FILE, int(guild_id), data)
 
 
 def _ticket_owner_from_name(name: str) -> str | None:

@@ -16,73 +16,44 @@ LOG_CHANNEL_FILE = "log_channel.json"
 
 def get_points(guild_id):
     """Load points data"""
-    data = db.get_json_scoped(POINTS_FILE, str(guild_id), {}, migrate_file=POINTS_FILE)
-    if not data:
-        legacy = db.get_json(POINTS_FILE, {}, migrate_file=POINTS_FILE)
-        if isinstance(legacy, dict) and legacy:
-            db.set_json_scoped(POINTS_FILE, str(guild_id), legacy)
-            return legacy
-    return data
+    return db.get_setting(POINTS_FILE, int(guild_id), {})
 
 def save_points(guild_id, data):
     """Save points data"""
-    db.set_json_scoped(POINTS_FILE, str(guild_id), data)
+    db.set_setting(POINTS_FILE, int(guild_id), data)
 
 def get_logs(guild_id):
     """Load logs data"""
-    data = db.get_json_scoped(LOGS_FILE, str(guild_id), [], migrate_file=LOGS_FILE)
-    if not data:
-        legacy = db.get_json(LOGS_FILE, [], migrate_file=LOGS_FILE)
-        if isinstance(legacy, list) and legacy:
-            db.set_json_scoped(LOGS_FILE, str(guild_id), legacy)
-            return legacy
-    return data
+    return db.get_setting(LOGS_FILE, int(guild_id), [])
 
 def save_logs(guild_id, data):
     """Save logs data"""
-    db.set_json_scoped(LOGS_FILE, str(guild_id), data)
+    db.set_setting(LOGS_FILE, int(guild_id), data)
 
 def get_managers(guild_id):
     """Load manager list"""
-    data = db.get_json_scoped(MANAGERS_FILE, str(guild_id), [], migrate_file=MANAGERS_FILE)
-    if not data:
-        legacy = db.get_json(MANAGERS_FILE, [], migrate_file=MANAGERS_FILE)
-        if isinstance(legacy, list) and legacy:
-            db.set_json_scoped(MANAGERS_FILE, str(guild_id), legacy)
-            return legacy
-    return data
+    return db.get_setting(MANAGERS_FILE, int(guild_id), [])
 
 def save_managers(guild_id, data):
     """Save manager list"""
-    db.set_json_scoped(MANAGERS_FILE, str(guild_id), data)
+    db.set_setting(MANAGERS_FILE, int(guild_id), data)
 
 def get_lb_config(guild_id):
     """Load leaderboard config"""
-    data = db.get_json_scoped(LB_CONFIG_FILE, str(guild_id), {}, migrate_file=LB_CONFIG_FILE)
-    if not data:
-        legacy = db.get_json(LB_CONFIG_FILE, {}, migrate_file=LB_CONFIG_FILE)
-        if isinstance(legacy, dict) and legacy:
-            db.set_json_scoped(LB_CONFIG_FILE, str(guild_id), legacy)
-            return legacy
-    return data
+    return db.get_setting(LB_CONFIG_FILE, int(guild_id), {})
 
 def save_lb_config(guild_id, data):
     """Save leaderboard config"""
-    db.set_json_scoped(LB_CONFIG_FILE, str(guild_id), data)
+    db.set_setting(LB_CONFIG_FILE, int(guild_id), data)
 
 def get_log_channel(guild_id):
     """Get log channel ID"""
-    config = db.get_json_scoped(LOG_CHANNEL_FILE, str(guild_id), {}, migrate_file=LOG_CHANNEL_FILE)
-    if not config:
-        legacy = db.get_json(LOG_CHANNEL_FILE, {}, migrate_file=LOG_CHANNEL_FILE)
-        if isinstance(legacy, dict) and legacy:
-            db.set_json_scoped(LOG_CHANNEL_FILE, str(guild_id), legacy)
-            config = legacy
+    config = db.get_setting(LOG_CHANNEL_FILE, int(guild_id), {})
     return config.get("channel_id")
 
 def set_log_channel(guild_id, channel_id):
     """Set log channel ID"""
-    db.set_json_scoped(LOG_CHANNEL_FILE, str(guild_id), {"channel_id": channel_id})
+    db.set_setting(LOG_CHANNEL_FILE, int(guild_id), {"channel_id": channel_id})
 
 def log_action(guild_id, manager_id, manager_name, action, target_id, target_name, points, reason):
     """Log manager action"""

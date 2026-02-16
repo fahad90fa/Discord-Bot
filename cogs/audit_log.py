@@ -8,20 +8,11 @@ AUDIT_CONFIG_FILE = "audit_log_config.json"
 
 
 def _load_json(guild_id, default):
-    data = db.get_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), default, migrate_file=AUDIT_CONFIG_FILE)
-    if not data:
-        legacy = db.get_json(AUDIT_CONFIG_FILE, {}, migrate_file=AUDIT_CONFIG_FILE)
-        if isinstance(legacy, dict):
-            legacy_val = legacy.get(str(guild_id))
-            if legacy_val:
-                migrated = {"channel_id": legacy_val}
-                db.set_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), migrated)
-                return migrated
-    return data
+    return db.get_setting(AUDIT_CONFIG_FILE, int(guild_id), default)
 
 
 def _save_json(guild_id, data):
-    db.set_json_scoped(AUDIT_CONFIG_FILE, str(guild_id), data)
+    db.set_setting(AUDIT_CONFIG_FILE, int(guild_id), data)
 
 
 def _truncate(s: str, n: int = 900) -> str:

@@ -10,17 +10,11 @@ GIVEAWAYS_FILE = "giveaways.json"
 
 
 def _load_json(guild_id, default):
-    data = db.get_json_scoped(GIVEAWAYS_FILE, str(guild_id), default, migrate_file=GIVEAWAYS_FILE)
-    if not data or data == default:
-        legacy = db.get_json(GIVEAWAYS_FILE, default, migrate_file=GIVEAWAYS_FILE)
-        if legacy and legacy != default:
-            db.set_json_scoped(GIVEAWAYS_FILE, str(guild_id), legacy)
-            return legacy
-    return data
+    return db.get_setting(GIVEAWAYS_FILE, int(guild_id), default)
 
 
 def _save_json(guild_id, data):
-    db.set_json_scoped(GIVEAWAYS_FILE, str(guild_id), data)
+    db.set_setting(GIVEAWAYS_FILE, int(guild_id), data)
 
 
 def parse_duration(s: str) -> int:

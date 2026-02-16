@@ -13,13 +13,13 @@ SNIPE_FILE = "snipe_cache.json"
 MAX_SNIPES_PER_CHANNEL = 20
 
 def _load_snipes(guild_id):
-    data = db.get_json_scoped(SNIPE_FILE, str(guild_id), {}, migrate_file=SNIPE_FILE)
+    data = db.get_setting(SNIPE_FILE, int(guild_id), {})
     if not isinstance(data, dict):
         data = {}
     return data
 
 def _save_snipes(guild_id, data):
-    db.set_json_scoped(SNIPE_FILE, str(guild_id), data)
+    db.set_setting(SNIPE_FILE, int(guild_id), data)
 
 def _trim_snipes(snipes, max_len):
     if len(snipes) <= max_len:
