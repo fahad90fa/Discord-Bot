@@ -27,7 +27,10 @@ CREATE TABLE IF NOT EXISTS session_alert_config (
   session_role_id BIGINT,
   news_role_id BIGINT,
   last_asia_date TEXT,
-  last_london_date TEXT
+  last_sydney_date TEXT,
+  last_tokyo_date TEXT,
+  last_london_date TEXT,
+  last_newyork_date TEXT
 );
 
 CREATE TABLE IF NOT EXISTS antilink_config (

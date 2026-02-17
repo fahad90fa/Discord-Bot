@@ -56,35 +56,68 @@ def save_sent_news(guild_id, data):
 
 def load_session_alert_config(guild_id):
     row = db.execute(
-        "SELECT channel_id, session_role_id, news_role_id, last_asia_date, last_london_date FROM session_alert_config WHERE guild_id = %s",
+        """
+        SELECT
+          channel_id,
+          session_role_id,
+          news_role_id,
+          last_asia_date,
+          last_sydney_date,
+          last_tokyo_date,
+          last_london_date,
+          last_newyork_date
+        FROM session_alert_config
+        WHERE guild_id = %s
+        """,
         (int(guild_id),),
         fetchone=True
     ) or {}
     return {
         "channel_id": row.get("channel_id"),
         "roles": {"session": row.get("session_role_id"), "news": row.get("news_role_id")},
-        "last_sent": {"asia": row.get("last_asia_date"), "london": row.get("last_london_date")}
+        "last_sent": {
+            "sydney": row.get("last_sydney_date"),
+            "tokyo": row.get("last_tokyo_date") or row.get("last_asia_date"),
+            "london": row.get("last_london_date"),
+            "newyork": row.get("last_newyork_date")
+        }
     }
 
 def save_session_alert_config(guild_id, data):
     db.execute(
         """
-        INSERT INTO session_alert_config (guild_id, channel_id, session_role_id, news_role_id, last_asia_date, last_london_date)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO session_alert_config (
+          guild_id,
+          channel_id,
+          session_role_id,
+          news_role_id,
+          last_asia_date,
+          last_sydney_date,
+          last_tokyo_date,
+          last_london_date,
+          last_newyork_date
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (guild_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           session_role_id = EXCLUDED.session_role_id,
           news_role_id = EXCLUDED.news_role_id,
           last_asia_date = EXCLUDED.last_asia_date,
-          last_london_date = EXCLUDED.last_london_date
+          last_sydney_date = EXCLUDED.last_sydney_date,
+          last_tokyo_date = EXCLUDED.last_tokyo_date,
+          last_london_date = EXCLUDED.last_london_date,
+          last_newyork_date = EXCLUDED.last_newyork_date
         """,
         (
             int(guild_id),
             data.get("channel_id"),
             data.get("roles", {}).get("session"),
             data.get("roles", {}).get("news"),
-            data.get("last_sent", {}).get("asia"),
-            data.get("last_sent", {}).get("london")
+            data.get("last_sent", {}).get("tokyo"),
+            data.get("last_sent", {}).get("sydney"),
+            data.get("last_sent", {}).get("tokyo"),
+            data.get("last_sent", {}).get("london"),
+            data.get("last_sent", {}).get("newyork")
         )
     )
 
@@ -541,16 +574,25 @@ class ForexNews(commands.Cog):
         now_utc = datetime.now(pytz.UTC)
         now_pkt = now_utc.astimezone(pytz.timezone("Asia/Karachi"))
 
-        asia_open_utc, asia_open_local = get_session_open_utc(now_utc, "Asia/Tokyo", 9, 0)
+        sydney_open_utc, sydney_open_local = get_session_open_utc(now_utc, "Australia/Sydney", 7, 0)
+        tokyo_open_utc, tokyo_open_local = get_session_open_utc(now_utc, "Asia/Tokyo", 9, 0)
         london_open_utc, london_open_local = get_session_open_utc(now_utc, "Europe/London", 8, 0)
+        newyork_open_utc, newyork_open_local = get_session_open_utc(now_utc, "America/New_York", 8, 0)
 
         sessions = [
             {
-                "key": "asia",
-                "title": "🌏 ASIA SESSION OPEN",
+                "key": "sydney",
+                "title": "🌅 SYDNEY SESSION OPEN",
+                "market": "Sydney",
+                "open_utc": sydney_open_utc,
+                "open_local": sydney_open_local
+            },
+            {
+                "key": "tokyo",
+                "title": "🌏 TOKYO SESSION OPEN",
                 "market": "Tokyo",
-                "open_utc": asia_open_utc,
-                "open_local": asia_open_local
+                "open_utc": tokyo_open_utc,
+                "open_local": tokyo_open_local
             },
             {
                 "key": "london",
@@ -558,6 +600,13 @@ class ForexNews(commands.Cog):
                 "market": "London",
                 "open_utc": london_open_utc,
                 "open_local": london_open_local
+            },
+            {
+                "key": "newyork",
+                "title": "🗽 NEW YORK SESSION OPEN",
+                "market": "New York",
+                "open_utc": newyork_open_utc,
+                "open_local": newyork_open_local
             }
         ]
 
@@ -1564,23 +1613,27 @@ class ForexNews(commands.Cog):
     @commands.command(name="alert", aliases=["setalert", "sessionalert"])
     @is_owner_check()
     async def set_session_alert_channel(self, ctx, channel: discord.TextChannel):
-        """Set auto session-open alert channel (Asia + London)"""
+        """Set auto session-open alert channel (Sydney + Tokyo + London + New York)"""
         config = load_session_alert_config(ctx.guild.id)
         config["channel_id"] = channel.id
         config.setdefault("last_sent", {})
         save_session_alert_config(ctx.guild.id, config)
 
         now_utc = datetime.now(pytz.UTC)
-        next_asia_pkt = get_next_session_open_pkt(now_utc, "Asia/Tokyo", 9, 0)
+        next_sydney_pkt = get_next_session_open_pkt(now_utc, "Australia/Sydney", 7, 0)
+        next_tokyo_pkt = get_next_session_open_pkt(now_utc, "Asia/Tokyo", 9, 0)
         next_london_pkt = get_next_session_open_pkt(now_utc, "Europe/London", 8, 0)
+        next_newyork_pkt = get_next_session_open_pkt(now_utc, "America/New_York", 8, 0)
 
         embed = discord.Embed(
             title="✅ SESSION ALERTS ENABLED",
             description=(
                 f"**Channel:** {channel.mention}\n"
-                f"**Alerts:** `ASIA OPEN`, `LONDON OPEN`\n"
-                f"**Next Asia (PKT):** `{next_asia_pkt.strftime('%a, %I:%M %p')}`\n"
-                f"**Next London (PKT):** `{next_london_pkt.strftime('%a, %I:%M %p')}`"
+                f"**Alerts:** `SYDNEY OPEN`, `TOKYO OPEN`, `LONDON OPEN`, `NEW YORK OPEN`\n"
+                f"**Next Sydney (PKT):** `{next_sydney_pkt.strftime('%a, %I:%M %p')}`\n"
+                f"**Next Tokyo (PKT):** `{next_tokyo_pkt.strftime('%a, %I:%M %p')}`\n"
+                f"**Next London (PKT):** `{next_london_pkt.strftime('%a, %I:%M %p')}`\n"
+                f"**Next New York (PKT):** `{next_newyork_pkt.strftime('%a, %I:%M %p')}`"
             ),
             color=0x2ecc71
         )

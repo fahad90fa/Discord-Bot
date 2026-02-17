@@ -62,10 +62,16 @@ def init_db():
                   session_role_id BIGINT,
                   news_role_id BIGINT,
                   last_asia_date TEXT,
-                  last_london_date TEXT
+                  last_sydney_date TEXT,
+                  last_tokyo_date TEXT,
+                  last_london_date TEXT,
+                  last_newyork_date TEXT
                 )
                 """
             )
+            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_sydney_date TEXT")
+            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_tokyo_date TEXT")
+            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_newyork_date TEXT")
             cur.execute(
                 """
                 CREATE TABLE IF NOT EXISTS antilink_config (
