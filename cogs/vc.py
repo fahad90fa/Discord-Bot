@@ -1,4 +1,5 @@
 import re
+import asyncio
 from datetime import datetime
 
 import discord
@@ -522,6 +523,34 @@ class VoiceControl(commands.Cog):
             embed.set_thumbnail(url=guild.icon.url)
         return embed
 
+    def _build_vc_help_embed(self, guild: discord.Guild) -> discord.Embed:
+        embed = discord.Embed(
+            title="VOICE CONTROL SUITE",
+            description=(
+                "```ansi\n"
+                "\u001b[1;36mSYSTEM :\u001b[0m \u001b[0;37mJOIN-TO-CREATE MANAGEMENT\u001b[0m\n"
+                "\u001b[1;36mMODE   :\u001b[0m \u001b[0;37mADVANCED / INTERFACE + COMMANDS\u001b[0m\n"
+                "```"
+            ),
+            color=0x2b2d31,
+        )
+        embed.add_field(
+            name="Core Commands",
+            value=(
+                "`-vc setup <join_channel_id> [interface_channel_id] [category_id]`\n"
+                "`-vc panel [#channel]`\n"
+                "`-vc status`\n"
+                "`-vc template <text>`\n"
+                "`-vc cleanup`\n"
+                "`-vc disable`"
+            ),
+            inline=False,
+        )
+        embed.set_footer(text="Traders Union • Voice Infrastructure")
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        return embed
+
     async def send_panel(self, guild: discord.Guild, channel: discord.TextChannel) -> discord.Message:
         msg = await channel.send(embed=self._build_interface_embed(guild), view=self.view)
         cfg = get_vc_config(guild.id)
@@ -533,10 +562,7 @@ class VoiceControl(commands.Cog):
     @commands.group(name="vc", invoke_without_command=True)
     @commands.guild_only()
     async def vc_group(self, ctx):
-        await ctx.send(
-            "Use: `-vc setup <join_channel_id> [interface_channel_id] [category_id]`, "
-            "`-vc panel`, `-vc status`, `-vc template <text>`, `-vc disable`, `-vc cleanup`"
-        )
+        await ctx.send(embed=self._build_vc_help_embed(ctx.guild))
 
     @vc_group.command(name="setup")
     @commands.guild_only()
@@ -563,22 +589,43 @@ class VoiceControl(commands.Cog):
                 "category_id": category.id if category else None,
             }
         )
+        progress = await ctx.send("🛰️ `INITIALIZING VC CONTROL MATRIX...`")
+        await asyncio.sleep(0.4)
+        await progress.edit(content="⚙️ `SYNCHRONIZING JOIN-TO-CREATE ROUTES...`")
+        await asyncio.sleep(0.4)
         save_vc_config(guild.id, cfg)
 
         panel = await self.send_panel(guild, interface_channel)
-        await ctx.send(
-            f"✅ VC system enabled.\n"
-            f"Join-to-create channel: {join.mention}\n"
-            f"Interface panel: {panel.jump_url}"
+        await progress.edit(content="✅ `VOICE CONTROL SUITE ONLINE.`")
+        embed = discord.Embed(
+            title="VC SYSTEM ENABLED",
+            description=(
+                f"**Join-to-create:** {join.mention}\n"
+                f"**Interface channel:** {interface_channel.mention}\n"
+                f"**Category:** `{category.name if category else 'Same as join channel'}`\n"
+                f"**Panel:** [Open Interface]({panel.jump_url})"
+            ),
+            color=0x2ecc71,
         )
+        embed.set_footer(text="Buttons + -vc commands are now active")
+        await ctx.send(embed=embed)
 
     @vc_group.command(name="panel")
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
     async def vc_panel(self, ctx, channel: discord.TextChannel = None):
         target = channel or ctx.channel
+        progress = await ctx.send("📡 `DEPLOYING VOICE INTERFACE PANEL...`")
+        await asyncio.sleep(0.35)
         panel = await self.send_panel(ctx.guild, target)
-        await ctx.send(f"✅ Panel sent: {panel.jump_url}")
+        await progress.edit(content="✅ `INTERFACE PANEL DEPLOYED.`")
+        await ctx.send(
+            embed=discord.Embed(
+                title="VC PANEL SENT",
+                description=f"**Location:** {target.mention}\n**Jump:** [Open Panel]({panel.jump_url})",
+                color=0x2ecc71,
+            )
+        )
 
     @vc_group.command(name="status")
     @commands.guild_only()
@@ -598,6 +645,7 @@ class VoiceControl(commands.Cog):
         embed.add_field(name="Category", value=category.name if category else "Lobby category", inline=False)
         embed.add_field(name="Template", value=f"`{cfg.get('naming_template')}`", inline=False)
         embed.add_field(name="Active temp channels", value=f"`{len(temp_rows)}`", inline=False)
+        embed.set_footer(text="Traders Union • VC Runtime Telemetry")
         await ctx.send(embed=embed)
 
     @vc_group.command(name="template")
@@ -607,26 +655,47 @@ class VoiceControl(commands.Cog):
         cfg = get_vc_config(ctx.guild.id)
         cfg["naming_template"] = template.strip()[:80]
         save_vc_config(ctx.guild.id, cfg)
-        await ctx.send(f"✅ VC naming template updated to `{cfg['naming_template']}`")
+        await ctx.send(
+            embed=discord.Embed(
+                title="TEMPLATE UPDATED",
+                description=f"New VC naming template:\n`{cfg['naming_template']}`",
+                color=0x2ecc71,
+            )
+        )
 
     @vc_group.command(name="disable")
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
     async def vc_disable(self, ctx):
         delete_vc_config(ctx.guild.id)
-        await ctx.send("✅ VC system disabled for this server.")
+        await ctx.send(
+            embed=discord.Embed(
+                title="VC SYSTEM DISABLED",
+                description="Join-to-create configuration has been removed for this server.",
+                color=0xe67e22,
+            )
+        )
 
     @vc_group.command(name="cleanup")
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
     async def vc_cleanup(self, ctx):
+        progress = await ctx.send("🧹 `SCANNING VC REGISTRY FOR STALE RECORDS...`")
+        await asyncio.sleep(0.35)
         rows = list_temp_channels(ctx.guild.id)
         removed = 0
         for row in rows:
             if not ctx.guild.get_channel(int(row["channel_id"])):
                 delete_temp_channel(ctx.guild.id, int(row["channel_id"]))
                 removed += 1
-        await ctx.send(f"✅ Cleanup complete. Removed `{removed}` stale VC records.")
+        await progress.edit(content="✅ `VC REGISTRY CLEANUP COMPLETE.`")
+        await ctx.send(
+            embed=discord.Embed(
+                title="CLEANUP REPORT",
+                description=f"Removed `{removed}` stale VC records.",
+                color=0x2ecc71,
+            )
+        )
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
