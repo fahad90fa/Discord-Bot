@@ -277,12 +277,12 @@ class ForexAI(commands.Cog):
         """Set role icon. Usage: -addroleicon <role_id> <emoji>"""
         role = ctx.guild.get_role(role_id)
         if not role:
-            return await ctx.send("❌ Role not found. Check role ID.")
+            return await ctx.send(embed=discord.Embed(description="❌ Role not found. Check role ID.", color=0xe74c3c))
 
         if role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
-            return await ctx.send("❌ You can only edit roles below your top role.")
+            return await ctx.send(embed=discord.Embed(description="❌ You can only edit roles below your top role.", color=0xe74c3c))
         if role >= ctx.guild.me.top_role:
-            return await ctx.send("❌ I can only edit roles below my top role.")
+            return await ctx.send(embed=discord.Embed(description="❌ I can only edit roles below my top role.", color=0xe74c3c))
 
         icon_payload = None
         emoji = (emoji or "").strip()
@@ -293,26 +293,32 @@ class ForexAI(commands.Cog):
             emoji_id = int(m.group(1))
             custom_emoji = ctx.bot.get_emoji(emoji_id)
             if not custom_emoji:
-                return await ctx.send("❌ Custom emoji not found.")
+                return await ctx.send(embed=discord.Embed(description="❌ Custom emoji not found.", color=0xe74c3c))
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(str(custom_emoji.url)) as resp:
                         if resp.status != 200:
-                            return await ctx.send("❌ Failed to download custom emoji.")
+                            return await ctx.send(embed=discord.Embed(description="❌ Failed to download custom emoji.", color=0xe74c3c))
                         icon_payload = await resp.read()
             except Exception:
-                return await ctx.send("❌ Failed to process custom emoji.")
+                return await ctx.send(embed=discord.Embed(description="❌ Failed to process custom emoji.", color=0xe74c3c))
         else:
             # Unicode emoji (example: 😀)
             icon_payload = emoji
 
         try:
             await role.edit(display_icon=icon_payload, reason=f"Role icon set by {ctx.author} ({ctx.author.id})")
-            await ctx.send(f"✅ Role icon updated for {role.mention}.")
+            await ctx.send(
+                embed=discord.Embed(
+                    title="✅ ROLE ICON UPDATED",
+                    description=f"Role: `{role.name}` (`{role.id}`)",
+                    color=0x2ecc71
+                )
+            )
         except discord.Forbidden:
-            await ctx.send("❌ Missing permission to edit this role.")
+            await ctx.send(embed=discord.Embed(description="❌ Missing permission to edit this role.", color=0xe74c3c))
         except discord.HTTPException as e:
-            await ctx.send(f"❌ Failed to set role icon: `{e}`")
+            await ctx.send(embed=discord.Embed(description=f"❌ Failed to set role icon: `{e}`", color=0xe74c3c))
 
 async def setup(bot):
     await bot.add_cog(ForexAI(bot))
