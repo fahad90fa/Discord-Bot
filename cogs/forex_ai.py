@@ -269,5 +269,50 @@ class ForexAI(commands.Cog):
             allowed_mentions=discord.AllowedMentions.none()
         )
 
+    @commands.command(name="addroleicon", aliases=["roleicon"])
+    @commands.guild_only()
+    @commands.has_permissions(manage_roles=True)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def add_role_icon(self, ctx, role_id: int, emoji: str):
+        """Set role icon. Usage: -addroleicon <role_id> <emoji>"""
+        role = ctx.guild.get_role(role_id)
+        if not role:
+            return await ctx.send("❌ Role not found. Check role ID.")
+
+        if role >= ctx.author.top_role and ctx.author != ctx.guild.owner:
+            return await ctx.send("❌ You can only edit roles below your top role.")
+        if role >= ctx.guild.me.top_role:
+            return await ctx.send("❌ I can only edit roles below my top role.")
+
+        icon_payload = None
+        emoji = (emoji or "").strip()
+
+        # Custom emoji support: <:name:id> or <a:name:id>
+        m = re.fullmatch(r"<a?:\w+:(\d+)>", emoji)
+        if m:
+            emoji_id = int(m.group(1))
+            custom_emoji = ctx.bot.get_emoji(emoji_id)
+            if not custom_emoji:
+                return await ctx.send("❌ Custom emoji not found.")
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(str(custom_emoji.url)) as resp:
+                        if resp.status != 200:
+                            return await ctx.send("❌ Failed to download custom emoji.")
+                        icon_payload = await resp.read()
+            except Exception:
+                return await ctx.send("❌ Failed to process custom emoji.")
+        else:
+            # Unicode emoji (example: 😀)
+            icon_payload = emoji
+
+        try:
+            await role.edit(display_icon=icon_payload, reason=f"Role icon set by {ctx.author} ({ctx.author.id})")
+            await ctx.send(f"✅ Role icon updated for {role.mention}.")
+        except discord.Forbidden:
+            await ctx.send("❌ Missing permission to edit this role.")
+        except discord.HTTPException as e:
+            await ctx.send(f"❌ Failed to set role icon: `{e}`")
+
 async def setup(bot):
     await bot.add_cog(ForexAI(bot))
