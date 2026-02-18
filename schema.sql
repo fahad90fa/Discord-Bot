@@ -204,6 +204,24 @@ CREATE TABLE IF NOT EXISTS tickets (
   PRIMARY KEY (guild_id, channel_id)
 );
 
+CREATE TABLE IF NOT EXISTS vc_config (
+  guild_id BIGINT PRIMARY KEY,
+  lobby_channel_id BIGINT,
+  category_id BIGINT,
+  interface_channel_id BIGINT,
+  interface_message_id BIGINT,
+  naming_template TEXT NOT NULL DEFAULT '{user}''s VC',
+  default_user_limit INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS vc_temp_channels (
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  owner_id BIGINT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (guild_id, channel_id)
+);
+
 CREATE TABLE IF NOT EXISTS sent_news (
   guild_id BIGINT NOT NULL,
   event_id TEXT NOT NULL,

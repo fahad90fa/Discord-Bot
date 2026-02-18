@@ -51,6 +51,7 @@ async def setup_hook():
     extensions = [
         "cogs.forex",
         "cogs.forex_ai",
+        "cogs.vc",
         "cogs.tickets",
         "cogs.giveaways",
         "cogs.announcements",
