@@ -248,5 +248,26 @@ class ForexAI(commands.Cog):
         
         await ctx.send(embed=embed)
 
+    @commands.command(name="say")
+    async def say_message(self, ctx, *, message: str):
+        """Repeat a message as bot, delete user command, block ping abuse."""
+        lowered = (message or "").lower()
+
+        has_everyone_or_here = ("@everyone" in lowered) or ("@here" in lowered)
+        has_role_ping = bool(ctx.message.role_mentions) or bool(re.search(r"<@&\d+>", message or ""))
+
+        if has_everyone_or_here or has_role_ping:
+            return await ctx.send("❌ `@everyone`, `@here`, and role pings are not allowed in `say`.")
+
+        try:
+            await ctx.message.delete()
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        await ctx.send(
+            message,
+            allowed_mentions=discord.AllowedMentions.none()
+        )
+
 async def setup(bot):
     await bot.add_cog(ForexAI(bot))
