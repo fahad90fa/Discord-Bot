@@ -52,6 +52,29 @@ def strip_code_blocks(text: str) -> str:
     # Remove any triple-backtick blocks from model output if user didn't ask for code.
     return re.sub(r"```.*?```", "", text or "", flags=re.DOTALL).strip()
 
+def _pip_size(symbol: str) -> float:
+    s = (symbol or "").upper()
+    if "XAU" in s or "GOLD" in s:
+        return 0.1
+    if s.endswith("JPY"):
+        return 0.01
+    return 0.0001
+
+def _pip_value_per_lot_estimate(symbol: str, entry_price: float) -> float | None:
+    s = (symbol or "").upper()
+    if entry_price <= 0:
+        return None
+
+    # Standard lot assumptions (100,000 units for FX, 100 oz for XAUUSD).
+    if "XAU" in s or "GOLD" in s:
+        return 10.0
+    if s.endswith("USD"):
+        return 10.0
+    if s.endswith("JPY"):
+        # Approx for JPY quote pairs at current entry.
+        return (100000 * 0.01) / entry_price
+    return None
+
 def _default_forex_code_snippet(question: str) -> tuple[str, str]:
     """Fallback code snippet (language, code)."""
     q = (question or "").lower()
@@ -319,6 +342,77 @@ class ForexAI(commands.Cog):
             await ctx.send(embed=discord.Embed(description="❌ Missing permission to edit this role.", color=0xe74c3c))
         except discord.HTTPException as e:
             await ctx.send(embed=discord.Embed(description=f"❌ Failed to set role icon: `{e}`", color=0xe74c3c))
+
+    @commands.command(name="pips", aliases=["pipcalc", "tradecalc"])
+    async def pips_calculator(
+        self,
+        ctx,
+        entry_price: float,
+        exit_price: float,
+        lot_size: float,
+        symbol: str = "EURUSD",
+        pip_value_per_lot: float = None
+    ):
+        """
+        Calculate pip move and estimated P/L.
+        Usage: -pips <entry> <exit> <lot_size> [symbol] [pip_value_per_lot]
+        Example: -pips 1.08450 1.08700 0.50 EURUSD
+        """
+        if entry_price <= 0 or exit_price <= 0:
+            return await ctx.send("❌ Entry and exit price must be greater than 0.")
+        if lot_size <= 0:
+            return await ctx.send("❌ Lot size must be greater than 0.")
+
+        pair = symbol.upper().strip()
+        pip_size = _pip_size(pair)
+        signed_pips = (exit_price - entry_price) / pip_size
+        moved_pips = abs(signed_pips)
+
+        est_pip_value = pip_value_per_lot if pip_value_per_lot and pip_value_per_lot > 0 else _pip_value_per_lot_estimate(pair, entry_price)
+        if not est_pip_value:
+            est_pip_value = 10.0
+            estimation_note = "Default $10/pip per 1.00 lot used (estimate)."
+        elif pip_value_per_lot and pip_value_per_lot > 0:
+            estimation_note = "Custom pip value per lot used."
+        else:
+            estimation_note = "Auto-estimated pip value per lot used."
+
+        buy_pnl = signed_pips * est_pip_value * lot_size
+        sell_pnl = -buy_pnl
+
+        embed = discord.Embed(
+            title="📈 PIP & PROFIT CALCULATOR",
+            color=0x2b2d31
+        )
+        embed.add_field(
+            name="Trade Input",
+            value=(
+                f"**Pair:** `{pair}`\n"
+                f"**Entry:** `{entry_price}`\n"
+                f"**Exit:** `{exit_price}`\n"
+                f"**Lot Size:** `{lot_size}`"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Pip Move",
+            value=(
+                f"**Moved:** `{moved_pips:.2f} pips`\n"
+                f"**Direction:** `{'UP' if signed_pips > 0 else 'DOWN' if signed_pips < 0 else 'FLAT'}`"
+            ),
+            inline=False
+        )
+        embed.add_field(
+            name="Estimated P/L",
+            value=(
+                f"**If BUY:** `${buy_pnl:,.2f}`\n"
+                f"**If SELL:** `${sell_pnl:,.2f}`\n"
+                f"**Pip Value/Lot:** `${est_pip_value:,.2f}`"
+            ),
+            inline=False
+        )
+        embed.set_footer(text=f"{estimation_note} Educational estimate only.")
+        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(ForexAI(bot))
