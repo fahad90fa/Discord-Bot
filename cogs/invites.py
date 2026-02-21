@@ -117,6 +117,20 @@ def get_invite_stats(guild_id: int, inviter_id: int) -> dict:
         "rejoins": rejoin_count,
     }
 
+def get_active_invited_members(guild_id: int, inviter_id: int) -> list[dict]:
+    return db.execute(
+        """
+        SELECT user_id, joined_at, invite_code
+        FROM invite_events
+        WHERE guild_id = %s
+          AND inviter_id = %s
+          AND left_at IS NULL
+        ORDER BY joined_at DESC
+        """,
+        (int(guild_id), int(inviter_id)),
+        fetchall=True,
+    ) or []
+
 
 class InviteTracker(commands.Cog):
     def __init__(self, bot):
@@ -218,6 +232,45 @@ class InviteTracker(commands.Cog):
     async def invite_log_off(self, ctx):
         set_invite_log_channel(ctx.guild.id, None)
         await ctx.send("✅ Invite log disabled.")
+
+    @invite_group.command(name="show", aliases=["members", "joined"])
+    @commands.guild_only()
+    async def invite_show_members(self, ctx, member: discord.Member = None):
+        target = member or ctx.author
+        rows = get_active_invited_members(ctx.guild.id, target.id)
+
+        if not rows:
+            embed = discord.Embed(
+                title="INVITED MEMBERS",
+                description=f"No active joined members found for {target.mention}.",
+                color=0x2b2d31,
+            )
+            embed.set_footer(text="Only currently joined members are counted")
+            return await ctx.send(embed=embed)
+
+        lines = []
+        for idx, row in enumerate(rows[:25], start=1):
+            uid = int(row["user_id"])
+            joined_at = _to_dt(row.get("joined_at"))
+            ts = f"<t:{int(joined_at.timestamp())}:R>" if joined_at else "`unknown`"
+            code = row.get("invite_code") or "unknown"
+            lines.append(f"`{idx:02d}` <@{uid}> • code `{code}` • joined {ts}")
+
+        embed = discord.Embed(
+            title="INVITED MEMBERS",
+            description=(
+                f"**Inviter:** {target.mention}\n"
+                f"**Active Joined:** `{len(rows)}`\n\n"
+                + "\n".join(lines)
+            ),
+            color=0x2ecc71,
+            timestamp=discord.utils.utcnow(),
+        )
+        if len(rows) > 25:
+            embed.set_footer(text=f"Showing first 25 of {len(rows)} active members")
+        else:
+            embed.set_footer(text="Live list • leaves are auto-deducted")
+        await ctx.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_invite_create(self, invite: discord.Invite):
