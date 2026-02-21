@@ -106,7 +106,8 @@ def get_invite_stats(guild_id: int, inviter_id: int) -> dict:
     left_count = int(row.get("left_count", 0))
     fake_count = int(row.get("fake_count", 0))
     rejoin_count = int(row.get("rejoin_count", 0))
-    net = joins - left_count - fake_count
+    # "Invites" tracks effective active invites, while fake/rejoin remain separate counters.
+    net = joins - left_count
 
     return {
         "net": net,
@@ -133,6 +134,11 @@ class InviteTracker(commands.Cog):
             self.invite_cache[guild.id] = {}
 
     async def cog_load(self):
+        for guild in self.bot.guilds:
+            await self._refresh_guild_cache(guild)
+
+    @commands.Cog.listener()
+    async def on_ready(self):
         for guild in self.bot.guilds:
             await self._refresh_guild_cache(guild)
 
