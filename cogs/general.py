@@ -208,117 +208,101 @@ class HelpDropdown(discord.ui.Select):
     def __init__(self, cog: "General"):
         self.cog = cog
         options = [
-            discord.SelectOption(label="⟨◆⟩ HUB OVERVIEW ⟨◆⟩", value="hub", description="Boot into the nexus core"),
-            discord.SelectOption(label="⟨◆⟩ ⚔️ GUARDIAN PROTOCOLS ⟨◆⟩", value="moderation", description="Unleash moderation fury"),
-            discord.SelectOption(label="⟨◆⟩ 🛡️ SENTINEL MATRIX ⟨◆⟩", value="security", description="Deploy defensive layers"),
-            discord.SelectOption(label="⟨◆⟩ 💎 NEXUS EXCHANGE ⟨◆⟩", value="economy", description="Decode market mysteries"),
-            discord.SelectOption(label="⟨◆⟩ 🎮 RECREATION DIMENSION ⟨◆⟩", value="fun", description="Initiate game protocols"),
-            discord.SelectOption(label="⟨◆⟩ ⚙️ QUANTUM TOOLKIT ⟨◆⟩", value="utility", description="Access utility systems"),
+            discord.SelectOption(label="Moderation", value="moderation", emoji="🔴", description="Server moderation tools"),
+            discord.SelectOption(label="Security", value="security", emoji="🟢", description="Automated protection systems"),
+            discord.SelectOption(label="Economy", value="economy", emoji="🟡", description="Market and trading utilities"),
+            discord.SelectOption(label="Utilities", value="utilities", emoji="🔵", description="General utility commands"),
+            discord.SelectOption(label="Settings", value="settings", emoji="⚪", description="Administrative configuration"),
         ]
-        super().__init__(placeholder="⟨◆⟩ SELECT NEXUS SECTOR ⟨◆⟩", min_values=1, max_values=1, options=options)
+        super().__init__(placeholder="Select Category...", min_values=1, max_values=1, options=options)
 
-    def _cmd_box(self, cmd: str, desc: str) -> str:
-        return (
-            "```"
-            "\n╔═══════════════════╗"
-            f"\n║  ⟨CMD⟩ {cmd}"
-            "\n╠═══════════════════╣"
-            f"\n║  {desc}"
-            "\n╚═══════════════════╝"
-            "\n```"
+    def _category_embed(self, key: str) -> discord.Embed:
+        configs = {
+            "moderation": {
+                "title": "◆ Moderation",
+                "color": 0xED4245,
+                "desc": (
+                    "**ban / kick**\nMember removal and disciplinary control.\n"
+                    "────────────────────────\n"
+                    "**mute / unmute**\nTemporary communication restriction.\n"
+                    "────────────────────────\n"
+                    "**clear**\nBulk message cleanup.\n"
+                    "────────────────────────\n"
+                    "**lock / unlock**\nChannel write access control.\n"
+                ),
+                "usage": "`-ban @user reason`",
+            },
+            "security": {
+                "title": "◆ Security",
+                "color": 0x57F287,
+                "desc": (
+                    "**antilink**\nDetect and block unauthorized links.\n"
+                    "────────────────────────\n"
+                    "**antispam**\nMessage flood mitigation.\n"
+                    "────────────────────────\n"
+                    "**anticaps**\nExcessive caps enforcement.\n"
+                    "────────────────────────\n"
+                    "**antiemoji**\nEmoji spam protection.\n"
+                ),
+                "usage": "`-antispam on`",
+            },
+            "economy": {
+                "title": "◆ Economy",
+                "color": 0xF5A623,
+                "desc": (
+                    "**today**\nUpcoming economic events.\n"
+                    "────────────────────────\n"
+                    "**pips**\nPip movement and P/L estimate.\n"
+                    "────────────────────────\n"
+                    "**lotsize**\nRisk-based lot sizing.\n"
+                    "────────────────────────\n"
+                    "**ask**\nForex AI assistant guidance.\n"
+                ),
+                "usage": "`-pips 1.0845 1.0870 0.5 EURUSD`",
+            },
+            "utilities": {
+                "title": "◆ Utilities",
+                "color": 0x5865F2,
+                "desc": (
+                    "**membercount**\nServer population overview.\n"
+                    "────────────────────────\n"
+                    "**userinfo**\nDetailed profile inspection.\n"
+                    "────────────────────────\n"
+                    "**avatar**\nDisplay profile avatar.\n"
+                    "────────────────────────\n"
+                    "**ttt**\nTic-Tac-Toe against users or AI.\n"
+                ),
+                "usage": "`-ttt ai`",
+            },
+            "settings": {
+                "title": "◆ Settings",
+                "color": 0x99AAB5,
+                "desc": (
+                    "**setnews / alert**\nNews and session alert routing.\n"
+                    "────────────────────────\n"
+                    "**setauditlog / auditlogoff**\nAudit log channel control.\n"
+                    "────────────────────────\n"
+                    "**ticket setup**\nTicket panel and staff setup.\n"
+                    "────────────────────────\n"
+                    "**vc setup**\nVoice interface provisioning.\n"
+                ),
+                "usage": "`-ticket setup #panel #log #category @Staff`",
+            },
+        }
+        c = configs[key]
+        embed = discord.Embed(
+            title=c["title"],
+            description=c["desc"],
+            color=c["color"],
+            timestamp=discord.utils.utcnow(),
         )
+        embed.add_field(name="Usage", value=c["usage"], inline=False)
+        embed.set_footer(text="◂ Back to main help")
+        return embed
 
     async def callback(self, interaction: discord.Interaction):
-        bot = self.cog.bot
-        logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
-        embed = discord.Embed(color=0x0F0F23, timestamp=discord.utils.utcnow())
-        embed.set_thumbnail(url=logo)
-        embed.set_author(name="⟨◆⟩ QUANTUM NEXUS INTERFACE ⟨◆⟩", icon_url=bot.user.display_avatar.url)
-
-        v = self.values[0]
-        if v == "hub":
-            latency = round(bot.latency * 1000)
-            uptime = discord.utils.utcnow() - self.cog.started_at
-            hours = int(uptime.total_seconds() // 3600)
-            users = len([m for g in bot.guilds for m in g.members if not m.bot])
-            modules = 12
-
-            embed.title = "『 ⟨NEXUS CORE⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0x5865F2
-            embed.description = (
-                "━━━━━━ ◦ ❖ ◦ ━━━━━━\n"
-                "`*INITIALIZE*  SYS_BOOT.EXE`\n"
-                "`*WHOOSH*      Neural bridge online`\n"
-                "`Scanning...   [██████████] 100%`\n"
-                "```ansi\n"
-                "\u001b[1;36m⟨◆⟩ QUANTUM NEXUS COMMAND CENTER ⟨◆⟩\u001b[0m\n"
-                "\u001b[1;35mGL1TCH-LINK : ACTIVE // H0L0-MODE : TRUE\u001b[0m\n"
-                "```"
-                "━━━━━━ ◦ ❖ ◦ ━━━━━━\n"
-                "||easter_egg://nexus-heartbeat||"
-            )
-            embed.add_field(name="◈ Online Modules", value=f"`{modules}`  ▰▰▰▰▰▰▰▰▱▱", inline=True)
-            embed.add_field(name="◇ Active Users", value=f"`{users}`  ▰▰▰▰▰▰▱▱▱▱", inline=True)
-            embed.add_field(name="❖ System Uptime", value=f"`{hours}h`  ▰▰▰▰▰▱▱▱▱▱", inline=True)
-            embed.add_field(name="Classification", value="`S-RANK`", inline=True)
-            embed.add_field(name="Required Clearance", value="`👤 USER`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 0s`", inline=True)
-            embed.set_footer(text=f"⚡ Neural Link Established | Ping: {latency}ms | Sector: {interaction.guild.name if interaction.guild else 'Unknown'}")
-
-        elif v == "moderation":
-            embed.title = "『 ⟨⚔️ GUARDIAN PROTOCOLS⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0xFF006E
-            embed.description = "🌸⚔️  Moderation combat stack online.\n━━━━━━ ◦ ❖ ◦ ━━━━━━"
-            embed.add_field(name="BAN/KICK", value=self._cmd_box("-ban / -kick", "Entity removal & strike control"), inline=False)
-            embed.add_field(name="MUTE", value=self._cmd_box("-mute", "Voice/text suppression protocol"), inline=False)
-            embed.add_field(name="PURGE", value=self._cmd_box("-clear", "Message cleanup burst"), inline=False)
-            embed.add_field(name="Required Clearance Level", value="`🛡️ MOD / 👑 ADMIN`", inline=True)
-            embed.add_field(name="Classification Level", value="`A-RANK`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 2-5s`", inline=True)
-
-        elif v == "security":
-            embed.title = "『 ⟨🛡️ SENTINEL MATRIX⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0x00D9FF
-            embed.description = "⚡🔮  Defensive matrix armed.\n━━━━━━ ◦ ❖ ◦ ━━━━━━"
-            embed.add_field(name="ANTILINK", value=self._cmd_box("-antilink on/off", "Link barrier enforcement"), inline=False)
-            embed.add_field(name="ANTISPAM", value=self._cmd_box("-antispam on/off", "Flood-rate suppression"), inline=False)
-            embed.add_field(name="AUTOMOD", value=self._cmd_box("-anticaps / -antiemoji", "Pattern anomaly filtering"), inline=False)
-            embed.add_field(name="Required Clearance Level", value="`👑 ADMIN`", inline=True)
-            embed.add_field(name="Classification Level", value="`S-RANK`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 1-3s`", inline=True)
-
-        elif v == "economy":
-            embed.title = "『 ⟨💎 NEXUS EXCHANGE⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0xFFD700
-            embed.description = "💫🎴  Market data pipelines unlocked.\n━━━━━━ ◦ ❖ ◦ ━━━━━━"
-            embed.add_field(name="FOREX NEWS", value=self._cmd_box("-today / -reminders", "Economic impact events"), inline=False)
-            embed.add_field(name="RISK CALC", value=self._cmd_box("-lotsize / -pips", "Lot-size, pips, P/L estimate"), inline=False)
-            embed.add_field(name="AI DESK", value=self._cmd_box("-ask", "Forex AI assistant responses"), inline=False)
-            embed.add_field(name="Required Clearance Level", value="`👤 USER`", inline=True)
-            embed.add_field(name="Classification Level", value="`A-RANK`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 2s`", inline=True)
-
-        elif v == "fun":
-            embed.title = "『 ⟨🎮 RECREATION DIMENSION⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0x9D00FF
-            embed.description = "🌸⚔️  Entertainment node engaged.\n━━━━━━ ◦ ❖ ◦ ━━━━━━"
-            embed.add_field(name="TTT PvP/AI", value=self._cmd_box("-ttt @user / -ttt ai", "Button duel with unbeatable AI"), inline=False)
-            embed.add_field(name="Required Clearance Level", value="`👤 USER`", inline=True)
-            embed.add_field(name="Classification Level", value="`B-RANK`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 1s`", inline=True)
-
-        elif v == "utility":
-            embed.title = "『 ⟨⚙️ QUANTUM TOOLKIT⟩ 』PROTOCOLS INITIALIZED"
-            embed.color = 0x00FF9D
-            embed.description = "⚡🔮  Utility deck synchronized.\n━━━━━━ ◦ ❖ ◦ ━━━━━━"
-            embed.add_field(name="IDENTITY", value=self._cmd_box("-userinfo / -avatar", "Profile intel scan"), inline=False)
-            embed.add_field(name="SERVER", value=self._cmd_box("-membercount / -social", "Guild status + links"), inline=False)
-            embed.add_field(name="STATUS", value=self._cmd_box("-afk", "Away-state protocol"), inline=False)
-            embed.add_field(name="Required Clearance Level", value="`👤 USER`", inline=True)
-            embed.add_field(name="Classification Level", value="`A-RANK`", inline=True)
-            embed.add_field(name="Cooldown", value="`⏱️ 1-2s`", inline=True)
-
-        embed.set_footer(text=f"⟨◆⟩ SUPPORT NEXUS ⟨◆⟩ • Last Sync: {discord.utils.utcnow().strftime('%H:%M:%S UTC')}")
+        embed = self._category_embed(self.values[0])
+        embed.set_author(name=f"{self.cog.bot.user.name} ✅", icon_url=self.cog.bot.user.display_avatar.url)
         try:
             await interaction.response.edit_message(embed=embed)
         except Exception:
@@ -423,27 +407,31 @@ class General(commands.Cog):
         uptime = discord.utils.utcnow() - self.started_at
         hours = int(uptime.total_seconds() // 3600)
         total_users = len([m for g in self.bot.guilds for m in g.members if not m.bot])
+        modules = 12
         embed = discord.Embed(
-            title="⟨◆⟩ QUANTUM NEXUS COMMAND CENTER ⟨◆⟩",
+            title="TRADERS UNION ◆",
             description=(
-                "━━━━━━ ◦ ❖ ◦ ━━━━━━\n"
-                "`*INITIALIZE*  Booting nexus shell...`\n"
-                "`Scanning...   [████████░░] 80%`\n"
-                "`Scanning...   [██████████] 100%`\n"
-                "```ansi\n"
-                "\u001b[1;35mGLITCH_SIGNAL :: SYNCHRONIZED\u001b[0m\n"
-                "\u001b[1;36mHYPERLINK GRID READY // SELECT A SECTOR\u001b[0m\n"
-                "```"
-                "━━━━━━ ◦ ❖ ◦ ━━━━━━\n"
-                "||nexus_key: black-rabbit||"
+                "Institutional Grade Management System\n"
+                "─────────────────────────────────────\n"
+                "Unified command surface for moderation, security,\n"
+                "market operations, utility workflows, and configuration.\n"
+                "Select a category to continue."
             ),
-            color=0x5865F2
+            color=0x2b2d31,
+            timestamp=discord.utils.utcnow(),
         )
-        embed.set_author(name="TRADERS UNION MANAGER", icon_url=self.bot.user.display_avatar.url)
-        embed.add_field(name="Online Modules", value="`12` ▰▰▰▰▰▰▰▰▱▱", inline=True)
-        embed.add_field(name="Active Users", value=f"`{total_users}` ▰▰▰▰▰▱▱▱▱▱", inline=True)
-        embed.add_field(name="System Uptime", value=f"`{hours}h` ▰▰▰▰▱▱▱▱▱▱", inline=True)
-        embed.set_footer(text=f"⚡ Neural Link Established | Ping: {latency}ms | Sector: {ctx.guild.name}")
+        embed.set_author(name=f"{self.bot.user.name} ✅", icon_url=self.bot.user.display_avatar.url)
+        embed.set_thumbnail(url=self.bot.user.display_avatar.url)
+
+        embed.add_field(name="◆ Moderation", value="Member discipline and channel control.", inline=True)
+        embed.add_field(name="◆ Security", value="Automated protection and risk controls.", inline=True)
+        embed.add_field(name="◆ Economy", value="Forex tools and market operations.", inline=True)
+        embed.add_field(name="◆ Utilities", value="Identity, stats, and utility actions.", inline=True)
+        embed.add_field(name="◆ Settings", value="System configuration and routing.", inline=True)
+        embed.add_field(name="◆ Platform", value=f"Modules: `{modules}` • Users: `{total_users}` • Uptime: `{hours}h`", inline=True)
+
+        sector = ctx.guild.name if ctx.guild else "Direct"
+        embed.set_footer(text=f"Select a category below • Ping: {latency}ms • Sector: {sector}")
 
         await ctx.send(embed=embed, view=HelpView(self))
 
