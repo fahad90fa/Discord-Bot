@@ -277,3 +277,20 @@ CREATE TABLE IF NOT EXISTS ai_keys (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS invite_config (
+  guild_id BIGINT PRIMARY KEY,
+  log_channel_id BIGINT
+);
+
+CREATE TABLE IF NOT EXISTS invite_events (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  invite_code TEXT,
+  inviter_id BIGINT,
+  joined_at TEXT NOT NULL,
+  left_at TEXT,
+  is_fake BOOLEAN NOT NULL DEFAULT FALSE,
+  rejoin_7d BOOLEAN NOT NULL DEFAULT FALSE
+);
