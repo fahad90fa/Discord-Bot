@@ -146,32 +146,42 @@ class TicketPanelView(discord.ui.View):
 
     @discord.ui.button(label="🎫 Open Ticket", style=discord.ButtonStyle.green, custom_id="ticket_open")
     async def open_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.bot:
-            return await interaction.response.send_message("❌ Bots cannot open tickets.", ephemeral=True)
-        if not interaction.guild:
-            return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
+        try:
+            if interaction.user.bot:
+                return await interaction.response.send_message("❌ Bots cannot open tickets.", ephemeral=True)
+            if not interaction.guild:
+                return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=False)
 
-        guild_id = str(interaction.guild.id)
-        config = _load_config(guild_id)
-        category_id = config.get("category_id")
-        if not category_id:
-            return await interaction.response.send_message("❌ Ticket category not configured.", ephemeral=True)
+            guild_id = str(interaction.guild.id)
+            config = _load_config(guild_id)
+            category_id = config.get("category_id")
+            if not category_id:
+                return await interaction.followup.send("❌ Ticket category not configured.", ephemeral=True)
 
-        open_tickets = config.get("open_tickets", {})
-        user_id = str(interaction.user.id)
-        for ch_id, info in open_tickets.items():
-            if info.get("user_id") == user_id:
-                ch = interaction.guild.get_channel(int(ch_id))
-                if ch:
-                    return await interaction.response.send_message(f"✅ You already have an open ticket: {ch.mention}", ephemeral=True)
+            open_tickets = config.get("open_tickets", {})
+            user_id = str(interaction.user.id)
+            for ch_id, info in open_tickets.items():
+                if info.get("user_id") == user_id:
+                    ch = interaction.guild.get_channel(int(ch_id))
+                    if ch:
+                        return await interaction.followup.send(f"✅ You already have an open ticket: {ch.mention}", ephemeral=True)
 
-        category = interaction.guild.get_channel(int(category_id))
-        if not isinstance(category, discord.CategoryChannel):
-            return await interaction.response.send_message("❌ Ticket category not found.", ephemeral=True)
+            category = interaction.guild.get_channel(int(category_id))
+            if not isinstance(category, discord.CategoryChannel):
+                return await interaction.followup.send("❌ Ticket category not found.", ephemeral=True)
 
-        prompts = config.get("reason_prompts", ["Support", "Billing", "Technical", "Other"])
-        view = TicketReasonView(self.bot, prompts)
-        await interaction.response.send_message("Select a reason to open your ticket:", view=view, ephemeral=True)
+            prompts = config.get("reason_prompts", ["Support", "Billing", "Technical", "Other"])
+            view = TicketReasonView(self.bot, prompts)
+            await interaction.followup.send("Select a reason to open your ticket (expires in 5 minutes):", view=view, ephemeral=True)
+        except Exception as e:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f"❌ Ticket interaction failed: `{e}`", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Ticket interaction failed: `{e}`", ephemeral=True)
+            except Exception:
+                pass
 
 
 class TicketCloseView(discord.ui.View):
@@ -181,21 +191,31 @@ class TicketCloseView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Close Ticket", style=discord.ButtonStyle.danger, custom_id="ticket_close")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
-            return await interaction.response.send_message("❌ Invalid channel.", ephemeral=True)
+        try:
+            if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
+                return await interaction.response.send_message("❌ Invalid channel.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=False)
 
-        guild_id = str(interaction.guild.id)
-        config = _load_config(guild_id)
-        if str(interaction.channel.id) not in config.get("open_tickets", {}):
-            return await interaction.response.send_message("❌ This channel is not a ticket.", ephemeral=True)
+            guild_id = str(interaction.guild.id)
+            config = _load_config(guild_id)
+            if str(interaction.channel.id) not in config.get("open_tickets", {}):
+                return await interaction.followup.send("❌ This channel is not a ticket.", ephemeral=True)
 
-        await interaction.response.send_message("✅ Closing ticket and generating transcript...", ephemeral=True)
-        await close_ticket_channel(self.bot, interaction.channel, interaction.user, config)
+            await interaction.followup.send("✅ Closing ticket and generating transcript...", ephemeral=True)
+            await close_ticket_channel(self.bot, interaction.channel, interaction.user, config)
+        except Exception as e:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f"❌ Ticket close failed: `{e}`", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Ticket close failed: `{e}`", ephemeral=True)
+            except Exception:
+                pass
 
 
 class TicketReasonView(discord.ui.View):
     def __init__(self, bot, reasons):
-        super().__init__(timeout=120)
+        super().__init__(timeout=300)
         self.bot = bot
         self.reasons = reasons
         self.add_item(TicketReasonSelect(reasons))
@@ -207,59 +227,69 @@ class TicketReasonSelect(discord.ui.Select):
         super().__init__(placeholder="Choose a ticket reason...", min_values=1, max_values=1, options=options, custom_id="ticket_reason_select")
 
     async def callback(self, interaction: discord.Interaction):
-        if not interaction.guild:
-            return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
-        guild_id = str(interaction.guild.id)
-        config = _load_config(guild_id)
-        category_id = config.get("category_id")
-        if not category_id:
-            return await interaction.response.send_message("❌ Ticket category not configured.", ephemeral=True)
+        try:
+            if not interaction.guild:
+                return await interaction.response.send_message("❌ This can only be used in a server.", ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=False)
+            guild_id = str(interaction.guild.id)
+            config = _load_config(guild_id)
+            category_id = config.get("category_id")
+            if not category_id:
+                return await interaction.followup.send("❌ Ticket category not configured.", ephemeral=True)
 
-        open_tickets = config.get("open_tickets", {})
-        user_id = str(interaction.user.id)
-        for ch_id, info in open_tickets.items():
-            if info.get("user_id") == user_id:
-                ch = interaction.guild.get_channel(int(ch_id))
-                if ch:
-                    return await interaction.response.send_message(f"✅ You already have an open ticket: {ch.mention}", ephemeral=True)
+            open_tickets = config.get("open_tickets", {})
+            user_id = str(interaction.user.id)
+            for ch_id, info in open_tickets.items():
+                if info.get("user_id") == user_id:
+                    ch = interaction.guild.get_channel(int(ch_id))
+                    if ch:
+                        return await interaction.followup.send(f"✅ You already have an open ticket: {ch.mention}", ephemeral=True)
 
-        category = interaction.guild.get_channel(int(category_id))
-        if not isinstance(category, discord.CategoryChannel):
-            return await interaction.response.send_message("❌ Ticket category not found.", ephemeral=True)
+            category = interaction.guild.get_channel(int(category_id))
+            if not isinstance(category, discord.CategoryChannel):
+                return await interaction.followup.send("❌ Ticket category not found.", ephemeral=True)
 
-        ticket_id = str(interaction.user.id)[-4:]
-        channel_name = f"ticket-{interaction.user.name.lower()[:12]}-{ticket_id}"
-        overwrites = _build_overwrites(interaction.guild, interaction.user, config.get("staff_roles", []))
-        channel = await interaction.guild.create_text_channel(
-            name=channel_name,
-            category=category,
-            overwrites=overwrites,
-            reason=f"Ticket opened by {interaction.user}"
-        )
+            ticket_id = str(interaction.user.id)[-4:]
+            channel_name = f"ticket-{interaction.user.name.lower()[:12]}-{ticket_id}"
+            overwrites = _build_overwrites(interaction.guild, interaction.user, config.get("staff_roles", []))
+            channel = await interaction.guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                overwrites=overwrites,
+                reason=f"Ticket opened by {interaction.user}"
+            )
 
-        open_tickets[str(channel.id)] = {
-            "user_id": user_id,
-            "created_at": datetime.utcnow().isoformat(),
-            "last_activity": datetime.utcnow().isoformat(),
-            "reason": self.values[0]
-        }
-        config["open_tickets"] = open_tickets
-        _save_config(guild_id, config)
+            open_tickets[str(channel.id)] = {
+                "user_id": user_id,
+                "created_at": datetime.utcnow().isoformat(),
+                "last_activity": datetime.utcnow().isoformat(),
+                "reason": self.values[0]
+            }
+            config["open_tickets"] = open_tickets
+            _save_config(guild_id, config)
 
-        embed = discord.Embed(
-            title="🎫 TICKET OPENED",
-            description=(
-                f"**User:** {interaction.user.mention}\n"
-                f"**Reason:** `{self.values[0]}`\n"
-                f"**Channel:** {channel.mention}\n"
-                "A staff member will be with you shortly."
-            ),
-            color=0x2ecc71
-        )
-        embed.set_footer(text="TRADERS UNION • Ticket System")
-        await channel.send(embed=embed, view=TicketCloseView(self.view.bot))
+            embed = discord.Embed(
+                title="🎫 TICKET OPENED",
+                description=(
+                    f"**User:** {interaction.user.mention}\n"
+                    f"**Reason:** `{self.values[0]}`\n"
+                    f"**Channel:** {channel.mention}\n"
+                    "A staff member will be with you shortly."
+                ),
+                color=0x2ecc71
+            )
+            embed.set_footer(text="TRADERS UNION • Ticket System")
+            await channel.send(embed=embed, view=TicketCloseView(self.view.bot))
 
-        await interaction.response.send_message(f"✅ Ticket created: {channel.mention}", ephemeral=True)
+            await interaction.followup.send(f"✅ Ticket created: {channel.mention}", ephemeral=True)
+        except Exception as e:
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(f"❌ Ticket creation failed: `{e}`", ephemeral=True)
+                else:
+                    await interaction.response.send_message(f"❌ Ticket creation failed: `{e}`", ephemeral=True)
+            except Exception:
+                pass
 
 
 async def close_ticket_channel(bot, channel: discord.TextChannel, closed_by: discord.Member, config: dict):
@@ -306,6 +336,12 @@ class Tickets(commands.Cog):
         self.bot.add_view(TicketPanelView(bot))
         self.bot.add_view(TicketCloseView(bot))
         self.auto_close_task.start()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Re-register persistent views safely after reconnect/restart.
+        self.bot.add_view(TicketPanelView(self.bot))
+        self.bot.add_view(TicketCloseView(self.bot))
 
     @commands.group(name="ticket", invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
