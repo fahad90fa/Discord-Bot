@@ -133,6 +133,39 @@ def delete_temp_channel(guild_id: int, channel_id: int):
     )
 
 
+def resolve_or_autoreg_temp_channel(member: discord.Member, channel: discord.VoiceChannel) -> dict | None:
+    """
+    Return VC temp record if present.
+    If missing but channel fits current JTC config and member has management permission there,
+    auto-register as owner to self-heal stale/missing DB mappings.
+    """
+    row = get_temp_channel(member.guild.id, channel.id)
+    if row:
+        return row
+
+    cfg = get_vc_config(member.guild.id)
+    lobby_id = cfg.get("lobby_channel_id")
+    if not lobby_id or channel.id == int(lobby_id):
+        return None
+
+    category_id = cfg.get("category_id")
+    if category_id:
+        if not channel.category or channel.category.id != int(category_id):
+            return None
+    else:
+        lobby = member.guild.get_channel(int(lobby_id))
+        if isinstance(lobby, discord.VoiceChannel):
+            if channel.category_id != lobby.category_id:
+                return None
+
+    perms = channel.permissions_for(member)
+    if not perms.manage_channels:
+        return None
+
+    save_temp_channel(member.guild.id, channel.id, member.id)
+    return get_temp_channel(member.guild.id, channel.id)
+
+
 class BaseOwnerModal(discord.ui.Modal):
     def __init__(self, cog: "VoiceControl", title: str):
         super().__init__(title=title)
@@ -144,7 +177,7 @@ class BaseOwnerModal(discord.ui.Modal):
             await interaction.response.send_message("You must be inside your temp voice channel.", ephemeral=True)
             return None, None
         channel = member.voice.channel
-        row = get_temp_channel(member.guild.id, channel.id)
+        row = resolve_or_autoreg_temp_channel(member, channel)
         if not row:
             await interaction.response.send_message("This is not a temp voice channel.", ephemeral=True)
             return None, None
@@ -344,7 +377,7 @@ class VcControlView(discord.ui.View):
             await interaction.response.send_message("Join your temp VC first.", ephemeral=True)
             return None, None
         channel = member.voice.channel
-        row = get_temp_channel(member.guild.id, channel.id)
+        row = resolve_or_autoreg_temp_channel(member, channel)
         if not row:
             await interaction.response.send_message("This channel is not a managed temp VC.", ephemeral=True)
             return None, None
@@ -471,7 +504,7 @@ class VcControlView(discord.ui.View):
             return await interaction.response.send_message("Join the temp VC first.", ephemeral=True)
 
         channel = member.voice.channel
-        row = get_temp_channel(member.guild.id, channel.id)
+        row = resolve_or_autoreg_temp_channel(member, channel)
         if not row:
             return await interaction.response.send_message("This is not a managed temp VC.", ephemeral=True)
         owner = member.guild.get_member(int(row["owner_id"]))
