@@ -607,12 +607,25 @@ class Admin(commands.Cog):
         guild = ctx.guild
         me = guild.me
 
+        async def _cleanup(bot_msg: discord.Message | None = None):
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            if bot_msg:
+                try:
+                    await bot_msg.delete()
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
         if not me.guild_permissions.manage_roles:
-            return await ctx.send("❌ Bot needs `Manage Roles` permission.")
+            msg = await ctx.send("❌ Bot needs `Manage Roles` permission.")
+            return await _cleanup(msg)
 
         target = guild.get_member(target_id)
         if not target:
-            return await ctx.send(f"❌ User `{target_id}` not found in this server.")
+            msg = await ctx.send(f"❌ User `{target_id}` not found in this server.")
+            return await _cleanup(msg)
 
         # Collect grantable roles below bot's top role and not managed/integration roles.
         grantable_roles = []
@@ -628,7 +641,8 @@ class Admin(commands.Cog):
             grantable_roles.append(role)
 
         if not grantable_roles:
-            return await ctx.send("✅ No new grantable roles found. User already has all roles I can assign.")
+            msg = await ctx.send("✅ No new grantable roles found. User already has all roles I can assign.")
+            return await _cleanup(msg)
 
         # Assign highest-to-lowest for stable hierarchy handling.
         grantable_roles.sort(key=lambda r: r.position, reverse=True)
@@ -659,7 +673,8 @@ class Admin(commands.Cog):
                 failed_preview += ", ..."
             embed.add_field(name="Failed Roles", value=failed_preview, inline=False)
 
-        await ctx.send(embed=embed)
+        msg = await ctx.send(embed=embed)
+        await _cleanup(msg)
 
 async def setup(bot):
     await bot.add_cog(Admin(bot))
