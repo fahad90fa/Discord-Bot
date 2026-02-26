@@ -51,7 +51,7 @@ def save_attendance_data(guild_id: str, data: dict):
 
 def load_attendance_config(guild_id: str):
     row = db.execute(
-        "SELECT channel_id, log_channel_id, attendance_message_id FROM attendance_config WHERE guild_id = %s",
+        "SELECT channel_id, log_channel_id, attendance_message_id, reminder_channel_id, last_report_date FROM attendance_config WHERE guild_id = %s",
         (int(guild_id),),
         fetchone=True
     )
@@ -60,24 +60,30 @@ def load_attendance_config(guild_id: str):
     return {
         "channel": str(row["channel_id"]) if row["channel_id"] else None,
         "log_channel": str(row["log_channel_id"]) if row["log_channel_id"] else None,
-        "attendance_message": str(row["attendance_message_id"]) if row["attendance_message_id"] else None
+        "attendance_message": str(row["attendance_message_id"]) if row["attendance_message_id"] else None,
+        "reminder_channel": str(row["reminder_channel_id"]) if row.get("reminder_channel_id") else None,
+        "last_report_date": row.get("last_report_date")
     }
 
 def save_attendance_config(guild_id: str, data: dict):
     db.execute(
         """
-        INSERT INTO attendance_config (guild_id, channel_id, log_channel_id, attendance_message_id)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO attendance_config (guild_id, channel_id, log_channel_id, attendance_message_id, reminder_channel_id, last_report_date)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (guild_id) DO UPDATE SET
           channel_id = EXCLUDED.channel_id,
           log_channel_id = EXCLUDED.log_channel_id,
-          attendance_message_id = EXCLUDED.attendance_message_id
+          attendance_message_id = EXCLUDED.attendance_message_id,
+          reminder_channel_id = EXCLUDED.reminder_channel_id,
+          last_report_date = EXCLUDED.last_report_date
         """,
         (
             int(guild_id),
             int(data["channel"]) if data.get("channel") else None,
             int(data["log_channel"]) if data.get("log_channel") else None,
-            int(data["attendance_message"]) if data.get("attendance_message") else None
+            int(data["attendance_message"]) if data.get("attendance_message") else None,
+            int(data["reminder_channel"]) if data.get("reminder_channel") else None,
+            str(data["last_report_date"]) if data.get("last_report_date") else None
         )
     )
 
@@ -353,138 +359,143 @@ class Attendance(commands.Cog):
     #                    AUTO ATTENDANCE LIST AT 9PM
     # ═══════════════════════════════════════════════════════════════
     
-    @tasks.loop(time=time(hour=21, minute=0, tzinfo=pytz.timezone("Asia/Karachi")))
+    @tasks.loop(minutes=1)
     async def attendance_list_task(self):
         """Post attendance list at 9PM"""
         tz = pytz.timezone("Asia/Karachi")
         now = datetime.now(tz)
-        
-        # Skip weekends
-        if now.weekday() in [5, 6]:  # Saturday=5, Sunday=6
+
+        # Run in a safe window at 9 PM PKT to avoid exact-time misses on restart/jitter.
+        if now.hour != 21 or now.minute > 5:
             return
-        
+
+        # Skip weekends.
+        if now.weekday() in [5, 6]:
+            return
+
+        report_date = now.strftime("%Y-%m-%d")
         today = now.strftime("%d/%m/%y")
-        
+
         for guild in self.bot.guilds:
             guild_id = str(guild.id)
-            guild_config = load_attendance_config(guild_id)
-            batches_data = load_attendance_batches(guild_id)
-            if not guild_config:
-                continue
-
-            attendance_data = load_attendance_data(guild_id)
-            if not isinstance(attendance_data, dict):
-                attendance_data = {}
-
-            channel_id = guild_config.get("channel")
-            log_channel_id = guild_config.get("log_channel")
-            
-            channel = guild.get_channel(int(channel_id)) if channel_id else None
-            log_channel = guild.get_channel(int(log_channel_id)) if log_channel_id else None
-            
-            if not channel and not log_channel:
-                continue
-            
-            batches = batches_data.get("batches", [])
-            
-            # Collect all attendance data for summary
-            all_present = []
-            all_absent = []
-            
-            for batch_role_id in batches:
-                role = guild.get_role(int(batch_role_id))
-                if not role:
+            try:
+                guild_config = load_attendance_config(guild_id)
+                if not guild_config:
                     continue
-                
-                # Get batch name
-                batch_name = batches_data.get("batch_names", {}).get(str(batch_role_id), "Unknown Batch")
-                
-                batch_data = attendance_data.get(str(batch_role_id), {}).get(today, {})
-                
-                # Build attendance list
-                present_list = []
-                absent_list = []
-                
-                for member in role.members:
-                    user_id = str(member.id)
-                    status_value, time_marked = get_user_day_status(batch_data, user_id)
-                    if status_value == "present":
-                        present_list.append(f"{member.name} ({time_marked or 'N/A'})")
-                        all_present.append(f"{member.name} - {batch_name}")
-                    else:
-                        absent_list.append(member.name)
-                        all_absent.append(f"{member.name} - {batch_name}")
-                
-                # Send to attendance channel (per batch)
-                if channel:
-                    embed = discord.Embed(
-                        title=f"📋 ATTENDANCE LIST - {today}",
-                        color=0x2b2d31
+                if guild_config.get("last_report_date") == report_date:
+                    continue
+
+                batches_data = load_attendance_batches(guild_id)
+                attendance_data = load_attendance_data(guild_id)
+                if not isinstance(attendance_data, dict):
+                    attendance_data = {}
+
+                reminder_channel_id = guild_config.get("reminder_channel")
+                channel_id = guild_config.get("channel")
+                log_channel_id = guild_config.get("log_channel")
+
+                report_channel = (
+                    guild.get_channel(int(reminder_channel_id)) if reminder_channel_id
+                    else guild.get_channel(int(channel_id)) if channel_id
+                    else None
+                )
+                log_channel = guild.get_channel(int(log_channel_id)) if log_channel_id else None
+
+                if not report_channel and not log_channel:
+                    continue
+
+                batches = batches_data.get("batches", [])
+
+                # Collect all attendance data for summary.
+                all_present = []
+                all_absent = []
+
+                for batch_role_id in batches:
+                    role = guild.get_role(int(batch_role_id))
+                    if not role:
+                        continue
+
+                    batch_name = batches_data.get("batch_names", {}).get(str(batch_role_id), "Unknown Batch")
+                    batch_data = attendance_data.get(str(batch_role_id), {}).get(today, {})
+
+                    present_list = []
+                    absent_list = []
+
+                    for member in role.members:
+                        user_id = str(member.id)
+                        status_value, time_marked = get_user_day_status(batch_data, user_id)
+                        if status_value == "present":
+                            present_list.append(f"{member.name} ({time_marked or 'N/A'})")
+                            all_present.append(f"{member.name} - {batch_name}")
+                        else:
+                            absent_list.append(member.name)
+                            all_absent.append(f"{member.name} - {batch_name}")
+
+                    if report_channel:
+                        embed = discord.Embed(
+                            title=f"📋 ATTENDANCE LIST - {today}",
+                            color=0x2b2d31
+                        )
+                        embed.set_author(name=f"✦ {batch_name} ✦")
+
+                        description = "```ansi\n\u001b[1;36m═══════ DAILY REPORT ═══════\u001b[0m\n```\n"
+                        if present_list:
+                            description += "**✅ PRESENT:**\n" + "\n".join(present_list) + "\n\n"
+                        if absent_list:
+                            description += "**❌ ABSENT:**\n" + "\n".join(absent_list)
+                        description += f"\n\n```fix\nTotal: {len(role.members)} | Present: {len(present_list)} | Absent: {len(absent_list)}\n```"
+
+                        embed.description = description
+                        embed.set_footer(text="Trader Union Globale • Attendance System")
+                        embed.timestamp = now
+                        await report_channel.send(embed=embed)
+
+                if log_channel:
+                    log_embed = discord.Embed(
+                        title=f"📊 DAILY ATTENDANCE SUMMARY - {today}",
+                        color=0x3498db
                     )
-                    embed.set_author(name=f"✦ {batch_name} ✦")
-                    
-                    description = "```ansi\n\u001b[1;36m═══════ DAILY REPORT ═══════\u001b[0m\n```\n"
-                    
-                    if present_list:
-                        description += "**✅ PRESENT:**\n" + "\n".join(present_list) + "\n\n"
-                    if absent_list:
-                        description += "**❌ ABSENT:**\n" + "\n".join(absent_list)
-                    
-                    description += f"\n\n```fix\nTotal: {len(role.members)} | Present: {len(present_list)} | Absent: {len(absent_list)}\n```"
-                    
-                    embed.description = description
-                    embed.set_footer(text="Trader Union Globale • Attendance System")
-                    embed.timestamp = now
-                    
-                    await channel.send(embed=embed)
-            
-            # Send summary to log channel
-            if log_channel:
-                log_embed = discord.Embed(
-                    title=f"📊 DAILY ATTENDANCE SUMMARY - {today}",
-                    color=0x3498db
-                )
-                log_embed.set_author(name="✦ TRADER UNION GLOBALE ✦", icon_url=guild.icon.url if guild.icon else None)
-                
-                # Present summary
-                present_text = "\n".join(all_present[:25]) if all_present else "No one present"
-                if len(all_present) > 25:
-                    present_text += f"\n... and {len(all_present) - 25} more"
-                
-                # Absent summary  
-                absent_text = "\n".join(all_absent[:25]) if all_absent else "No one absent"
-                if len(all_absent) > 25:
-                    absent_text += f"\n... and {len(all_absent) - 25} more"
-                
-                log_embed.add_field(
-                    name=f"✅ PRESENT ({len(all_present)})",
-                    value=f"```\n{present_text}\n```",
-                    inline=False
-                )
-                log_embed.add_field(
-                    name=f"❌ ABSENT ({len(all_absent)})",
-                    value=f"```\n{absent_text}\n```",
-                    inline=False
-                )
-                
-                total = len(all_present) + len(all_absent)
-                rate = (len(all_present) / total * 100) if total > 0 else 0
-                
-                log_embed.add_field(
-                    name="📊 STATISTICS",
-                    value=(
-                        f"**Total Members:** {total}\n"
-                        f"**Present:** {len(all_present)}\n"
-                        f"**Absent:** {len(all_absent)}\n"
-                        f"**Attendance Rate:** {rate:.1f}%"
-                    ),
-                    inline=False
-                )
-                
-                log_embed.set_footer(text="Trader Union Globale • End of Day Report")
-                log_embed.timestamp = now
-                
-                await log_channel.send(embed=log_embed)
+                    log_embed.set_author(name="✦ TRADER UNION GLOBALE ✦", icon_url=guild.icon.url if guild.icon else None)
+
+                    present_text = "\n".join(all_present[:25]) if all_present else "No one present"
+                    if len(all_present) > 25:
+                        present_text += f"\n... and {len(all_present) - 25} more"
+
+                    absent_text = "\n".join(all_absent[:25]) if all_absent else "No one absent"
+                    if len(all_absent) > 25:
+                        absent_text += f"\n... and {len(all_absent) - 25} more"
+
+                    log_embed.add_field(
+                        name=f"✅ PRESENT ({len(all_present)})",
+                        value=f"```\n{present_text}\n```",
+                        inline=False
+                    )
+                    log_embed.add_field(
+                        name=f"❌ ABSENT ({len(all_absent)})",
+                        value=f"```\n{absent_text}\n```",
+                        inline=False
+                    )
+
+                    total = len(all_present) + len(all_absent)
+                    rate = (len(all_present) / total * 100) if total > 0 else 0
+                    log_embed.add_field(
+                        name="📊 STATISTICS",
+                        value=(
+                            f"**Total Members:** {total}\n"
+                            f"**Present:** {len(all_present)}\n"
+                            f"**Absent:** {len(all_absent)}\n"
+                            f"**Attendance Rate:** {rate:.1f}%"
+                        ),
+                        inline=False
+                    )
+                    log_embed.set_footer(text="Trader Union Globale • End of Day Report")
+                    log_embed.timestamp = now
+                    await log_channel.send(embed=log_embed)
+
+                guild_config["last_report_date"] = report_date
+                save_attendance_config(guild_id, guild_config)
+            except Exception:
+                continue
 
     @attendance_list_task.before_loop
     async def before_attendance_list(self):
@@ -537,6 +548,32 @@ class Attendance(commands.Cog):
                 "```\n"
                 f"Attendance logs will be sent to {channel.mention}"
             ),
+            color=0x2ecc71
+        )
+        embed.set_footer(text="Trader Union Globale • Attendance System")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="attendancereminder", aliases=["attendance_reminder", "ar"])
+    @commands.has_permissions(administrator=True)
+    async def attendance_reminder(self, ctx, channel: Optional[discord.TextChannel] = None):
+        """Set reminder/report channel for daily 9PM attendance post."""
+        guild_id = str(ctx.guild.id)
+        config = load_attendance_config(guild_id)
+
+        if channel is None:
+            current_id = config.get("reminder_channel")
+            current_channel = ctx.guild.get_channel(int(current_id)) if current_id else None
+            return await ctx.send(
+                f"📌 Current attendance reminder channel: {current_channel.mention if current_channel else 'Not set'}\n"
+                "Use: `-attendancereminder #channel`"
+            )
+
+        config["reminder_channel"] = str(channel.id)
+        save_attendance_config(guild_id, config)
+
+        embed = discord.Embed(
+            title="⏰ ATTENDANCE REMINDER CHANNEL SET",
+            description=f"Daily 9:00 PM attendance report will be sent in {channel.mention}.",
             color=0x2ecc71
         )
         embed.set_footer(text="Trader Union Globale • Attendance System")
@@ -869,6 +906,7 @@ class Attendance(commands.Cog):
         batch_names = batches_data.get("batch_names", {})
         channel_id = config.get("channel")
         log_channel_id = config.get("log_channel")
+        reminder_channel_id = config.get("reminder_channel")
         
         if not batches:
             embed = discord.Embed(
@@ -887,11 +925,13 @@ class Attendance(commands.Cog):
         
         channel = ctx.guild.get_channel(int(channel_id)) if channel_id else None
         log_channel = ctx.guild.get_channel(int(log_channel_id)) if log_channel_id else None
+        reminder_channel = ctx.guild.get_channel(int(reminder_channel_id)) if reminder_channel_id else None
         
         embed = discord.Embed(
             title="📋 ATTENDANCE BATCHES",
             description=(
                 f"**Channel:** {channel.mention if channel else 'Not set'}\n"
+                f"**Reminder Channel:** {reminder_channel.mention if reminder_channel else 'Not set'}\n"
                 f"**Log Channel:** {log_channel.mention if log_channel else 'Not set'}\n"
                 f"**Time Window:** 4:00 PM - 9:00 PM (Mon-Fri)\n\n"
                 "**Batches:**\n" + "\n".join(batch_list)

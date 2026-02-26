@@ -88,7 +88,9 @@ CREATE TABLE IF NOT EXISTS attendance_config (
   guild_id BIGINT PRIMARY KEY,
   channel_id BIGINT,
   log_channel_id BIGINT,
-  attendance_message_id BIGINT
+  attendance_message_id BIGINT,
+  reminder_channel_id BIGINT,
+  last_report_date TEXT
 );
 
 CREATE TABLE IF NOT EXISTS attendance_batches (
@@ -277,6 +279,12 @@ CREATE TABLE IF NOT EXISTS ai_keys (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+ALTER TABLE attendance_config
+  ADD COLUMN IF NOT EXISTS reminder_channel_id BIGINT;
+
+ALTER TABLE attendance_config
+  ADD COLUMN IF NOT EXISTS last_report_date TEXT;
 
 CREATE TABLE IF NOT EXISTS invite_config (
   guild_id BIGINT PRIMARY KEY,
