@@ -295,6 +295,9 @@ class TicketReasonSelect(discord.ui.Select):
 async def close_ticket_channel(bot, channel: discord.TextChannel, closed_by: discord.Member, config: dict):
     guild_id = str(channel.guild.id)
     log_channel_id = config.get("log_channel_id")
+    open_tickets = config.get("open_tickets", {})
+    ticket_info = open_tickets.get(str(channel.id), {})
+    ticket_owner_id = ticket_info.get("user_id")
 
     transcript = await _build_transcript(channel)
     file = discord.File(transcript, filename=f"transcript-{channel.id}.txt")
@@ -318,14 +321,34 @@ async def close_ticket_channel(bot, channel: discord.TextChannel, closed_by: dis
             except Exception:
                 pass
 
-    open_tickets = config.get("open_tickets", {})
     if str(channel.id) in open_tickets:
         del open_tickets[str(channel.id)]
         config["open_tickets"] = open_tickets
         _save_config(guild_id, config)
 
     try:
-        await channel.delete(reason=f"Ticket closed by {closed_by}")
+        # Archive instead of deleting: hide from ticket owner and rename channel.
+        if ticket_owner_id:
+            owner = channel.guild.get_member(int(ticket_owner_id))
+            if owner:
+                await channel.set_permissions(
+                    owner,
+                    view_channel=False,
+                    send_messages=False,
+                    read_message_history=False,
+                    reason=f"Ticket closed by {closed_by}"
+                )
+
+        close_tag = f"{channel.id % 10000:04d}"
+        archived_name = f"closed-{close_tag}"
+        await channel.edit(name=archived_name, reason=f"Ticket archived by {closed_by}")
+        try:
+            await channel.send(
+                f"✅ Ticket archived by {closed_by.mention}. "
+                f"Channel renamed to `{archived_name}`."
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 
