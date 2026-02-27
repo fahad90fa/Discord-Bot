@@ -3,9 +3,11 @@ from discord.ext import commands
 import json
 import os
 import asyncio
+import time
 from dotenv import load_dotenv
 import db
 import db
+from discord.errors import HTTPException
 
 # Load environment variables
 load_dotenv()
@@ -111,4 +113,26 @@ if __name__ == "__main__":
         print("Set DISCORD_TOKEN in Railway Service -> Variables.")
         exit(1)
 
-    bot.run(discord_token)
+    retry_backoff = 60  # seconds
+    while True:
+        try:
+            bot.run(discord_token)
+            break
+        except HTTPException as e:
+            if getattr(e, "status", None) == 429:
+                retry_after = getattr(e, "retry_after", None)
+                wait_for = int(retry_after) if retry_after else retry_backoff
+                wait_for = max(30, min(wait_for, 1800))
+                print(
+                    f"⚠️ Discord global rate limit hit (429). "
+                    f"Waiting {wait_for}s before retry..."
+                )
+                time.sleep(wait_for)
+                retry_backoff = min(retry_backoff * 2, 1800)
+                continue
+            raise
+        except Exception as e:
+            wait_for = min(retry_backoff, 300)
+            print(f"❌ Bot start failed: {e}. Retrying in {wait_for}s...")
+            time.sleep(wait_for)
+            retry_backoff = min(retry_backoff * 2, 1800)
