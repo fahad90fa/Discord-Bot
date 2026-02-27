@@ -18,6 +18,10 @@ NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_MODEL = "moonshotai/kimi-k2.5"
 NVIDIA_IMAGE_MODEL = "black-forest-labs/flux.1-schnell"
 NVIDIA_API_KEY = "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"
+NVIDIA_IMAGE_API_KEY = "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"
+NVIDIA_FAST_MAX_TOKENS = 512
+NVIDIA_FAST_MAX_CHARS = 2200
+NVIDIA_IMAGE_SIZE = "512x512"
 
 # Forex trading related keywords
 FOREX_KEYWORDS = [
@@ -125,6 +129,9 @@ class ForexAI(commands.Cog):
     def _get_nvidia_key(self) -> str | None:
         return NVIDIA_API_KEY
 
+    def _get_nvidia_image_key(self) -> str | None:
+        return NVIDIA_IMAGE_API_KEY
+
     def _nvidia_completion_sync(self, prompt: str) -> str:
         api_key = self._get_nvidia_key()
         if not api_key:
@@ -140,14 +147,14 @@ class ForexAI(commands.Cog):
         payload = {
             "model": NVIDIA_MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 16384,
-            "temperature": 1.00,
+            "max_tokens": NVIDIA_FAST_MAX_TOKENS,
+            "temperature": 0.70,
             "top_p": 1.00,
             "stream": stream,
-            "chat_template_kwargs": {"thinking": True},
+            "chat_template_kwargs": {"thinking": False},
         }
 
-        response = requests.post(invoke_url, headers=headers, json=payload, stream=stream, timeout=180)
+        response = requests.post(invoke_url, headers=headers, json=payload, stream=stream, timeout=90)
         if response.status_code != 200:
             return f"❌ AI request failed: `{response.status_code} {response.text[:300]}`"
 
@@ -159,6 +166,7 @@ class ForexAI(commands.Cog):
                 return "❌ Invalid AI response payload."
 
         chunks: list[str] = []
+        char_count = 0
         for line in response.iter_lines():
             if not line:
                 continue
@@ -176,12 +184,20 @@ class ForexAI(commands.Cog):
             content = delta.get("content")
             if content:
                 chunks.append(content)
+                char_count += len(content)
+                # Early-stop for quick responses.
+                if char_count >= NVIDIA_FAST_MAX_CHARS:
+                    break
+        try:
+            response.close()
+        except Exception:
+            pass
 
         text = "".join(chunks).strip()
         return text or "No response generated."
 
     def _nvidia_image_sync(self, prompt: str) -> tuple[bytes | None, str | None]:
-        api_key = self._get_nvidia_key()
+        api_key = self._get_nvidia_image_key()
         if not api_key:
             return None, "❌ NVIDIA API key missing."
 
@@ -194,11 +210,11 @@ class ForexAI(commands.Cog):
         payload = {
             "model": NVIDIA_IMAGE_MODEL,
             "prompt": prompt,
-            "size": "1024x1024",
+            "size": NVIDIA_IMAGE_SIZE,
             "response_format": "b64_json",
         }
 
-        response = requests.post(invoke_url, headers=headers, json=payload, timeout=180)
+        response = requests.post(invoke_url, headers=headers, json=payload, timeout=90)
         if response.status_code != 200:
             return None, f"❌ Image generation failed: `{response.status_code} {response.text[:300]}`"
 
@@ -533,14 +549,17 @@ class ForexAI(commands.Cog):
         if is_image_mode and not image_prompt:
             return await ctx.send("❌ Use: `-ai ask image: <prompt>`")
 
+        status_text = "⚡ Generating image..." if is_image_mode else "⚡ Thinking..."
+        status_msg = await ctx.send(status_text)
+
         async with ctx.typing():
             try:
                 if is_image_mode:
                     image_bytes, img_err = await asyncio.to_thread(self._nvidia_image_sync, image_prompt)
                     if img_err:
-                        return await ctx.send(img_err)
+                        return await status_msg.edit(content=img_err)
                     if not image_bytes:
-                        return await ctx.send("❌ No image generated.")
+                        return await status_msg.edit(content="❌ No image generated.")
 
                     file = discord.File(io.BytesIO(image_bytes), filename="ai-image.png")
                     embed = discord.Embed(
@@ -549,7 +568,11 @@ class ForexAI(commands.Cog):
                         color=0x2b2d31
                     )
                     embed.set_image(url="attachment://ai-image.png")
-                    embed.set_footer(text=f"NVIDIA AI • Model: {NVIDIA_IMAGE_MODEL}")
+                    embed.set_footer(text=f"NVIDIA AI • Model: {NVIDIA_IMAGE_MODEL} • {NVIDIA_IMAGE_SIZE}")
+                    try:
+                        await status_msg.delete()
+                    except Exception:
+                        pass
                     return await ctx.send(embed=embed, file=file)
 
                 answer = await asyncio.to_thread(self._nvidia_completion_sync, question)
@@ -581,8 +604,8 @@ class ForexAI(commands.Cog):
         if len(answer_chunks) > 4:
             embed.add_field(name="Answer (More)", value="Response truncated to fit Discord embed limits.", inline=False)
 
-        embed.set_footer(text="NVIDIA AI • Model: google/gemma-2-27b-it")
-        await ctx.send(embed=embed)
+        embed.set_footer(text=f"NVIDIA AI • Model: {NVIDIA_MODEL} • Fast Mode")
+        await status_msg.edit(content=None, embed=embed)
 
 async def setup(bot):
     await bot.add_cog(ForexAI(bot))
