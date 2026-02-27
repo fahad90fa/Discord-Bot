@@ -57,9 +57,42 @@ CODE_REQUEST_RE = re.compile(
     r"\b(code|snippet|script|pinescript|pine|python|mt4|mt5|mql4|mql5|ea|indicator|bot)\b",
     re.IGNORECASE,
 )
+IMAGE_PREFIX_RE = re.compile(r"^(image|img|pic|photo|art)\s*:\s*(.*)$", re.IGNORECASE | re.DOTALL)
+IMAGE_SUBJECT_RE = re.compile(r"\b(image|photo|picture|pic|wallpaper|art|illustration|logo)\b", re.IGNORECASE)
+IMAGE_ACTION_RE = re.compile(r"\b(generate|create|make|draw|render|design)\b", re.IGNORECASE)
 
 def wants_code(text: str) -> bool:
     return bool(CODE_REQUEST_RE.search(text or ""))
+
+def is_image_request(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if IMAGE_PREFIX_RE.match(t):
+        return True
+    if t.lower().startswith(("/imagine ", "imagine ")):
+        return True
+    if IMAGE_ACTION_RE.search(t) and IMAGE_SUBJECT_RE.search(t):
+        return True
+    # Short noun-style prompts like "earth image", "neon city wallpaper"
+    if IMAGE_SUBJECT_RE.search(t) and len(t.split()) <= 12:
+        return True
+    return False
+
+def extract_image_prompt(text: str) -> str:
+    t = (text or "").strip()
+    m = IMAGE_PREFIX_RE.match(t)
+    if m:
+        return (m.group(2) or "").strip()
+    t = re.sub(r"^(?:/imagine|imagine)\s+", "", t, flags=re.IGNORECASE).strip()
+    t = re.sub(r"^(?:please\s+)?(?:generate|create|make|draw|render|design)\s+(?:me\s+)?", "", t, flags=re.IGNORECASE).strip()
+    t = re.sub(
+        r"^(?:an?\s+)?(?:image|photo|picture|pic|wallpaper|art|illustration|logo)\s*(?:of|for)?\s*",
+        "",
+        t,
+        flags=re.IGNORECASE,
+    ).strip()
+    return t or (text or "").strip()
 
 def strip_code_blocks(text: str) -> str:
     # Remove any triple-backtick blocks from model output if user didn't ask for code.
@@ -543,8 +576,8 @@ class ForexAI(commands.Cog):
     @ai_group.command(name="ask")
     async def ai_ask(self, ctx, *, question: str):
         """Ask anything from AI (NVIDIA endpoint)"""
-        is_image_mode = question.lower().startswith(("image:", "img:", "pic:"))
-        image_prompt = question.split(":", 1)[1].strip() if is_image_mode and ":" in question else question.strip()
+        is_image_mode = is_image_request(question)
+        image_prompt = extract_image_prompt(question) if is_image_mode else question.strip()
 
         if is_image_mode and not image_prompt:
             return await ctx.send("❌ Use: `-ai ask image: <prompt>`")
