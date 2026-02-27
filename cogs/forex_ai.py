@@ -464,15 +464,23 @@ class ForexAI(commands.Cog):
 
         if len(question) > 1000:
             question = question[:1000] + "..."
-        if len(answer) > 3500:
-            answer = answer[:3500] + "..."
+        if len(answer) > 3800:
+            answer = answer[:3800] + "..."
 
         embed = discord.Embed(
             title="🤖 AI ASK",
             color=0x2b2d31
         )
-        embed.add_field(name="Question", value=question, inline=False)
-        embed.add_field(name="Answer", value=answer, inline=False)
+        embed.add_field(name="Question", value=(question[:1021] + "...") if len(question) > 1024 else question, inline=False)
+
+        # Discord embed field value limit is 1024 chars.
+        answer_chunks = [answer[i:i + 1000] for i in range(0, len(answer), 1000)] or ["No response generated."]
+        for idx, chunk in enumerate(answer_chunks[:4], start=1):
+            title = "Answer" if idx == 1 else f"Answer (Part {idx})"
+            embed.add_field(name=title, value=chunk, inline=False)
+        if len(answer_chunks) > 4:
+            embed.add_field(name="Answer (More)", value="Response truncated to fit Discord embed limits.", inline=False)
+
         embed.set_footer(text="NVIDIA AI • Model: google/gemma-2-27b-it")
         await ctx.send(embed=embed)
 
