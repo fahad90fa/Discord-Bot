@@ -466,18 +466,24 @@ class ForexAI(commands.Cog):
             question = question[:1000] + "..."
         if len(answer) > 3800:
             answer = answer[:3800] + "..."
+        safe_question = question.replace("```", "'''" )
+        safe_answer = answer.replace("```", "'''")
 
         embed = discord.Embed(
             title="🤖 AI ASK",
             color=0x2b2d31
         )
-        embed.add_field(name="Question", value=(question[:1021] + "...") if len(question) > 1024 else question, inline=False)
+        q_block = f"```text\n{safe_question}\n```"
+        if len(q_block) > 1024:
+            clipped_q = safe_question[:1008] + "..."
+            q_block = f"```text\n{clipped_q}\n```"
+        embed.add_field(name="Question", value=q_block, inline=False)
 
         # Discord embed field value limit is 1024 chars.
-        answer_chunks = [answer[i:i + 1000] for i in range(0, len(answer), 1000)] or ["No response generated."]
+        answer_chunks = [safe_answer[i:i + 980] for i in range(0, len(safe_answer), 980)] or ["No response generated."]
         for idx, chunk in enumerate(answer_chunks[:4], start=1):
             title = "Answer" if idx == 1 else f"Answer (Part {idx})"
-            embed.add_field(name=title, value=chunk, inline=False)
+            embed.add_field(name=title, value=f"```text\n{chunk}\n```", inline=False)
         if len(answer_chunks) > 4:
             embed.add_field(name="Answer (More)", value="Response truncated to fit Discord embed limits.", inline=False)
 
