@@ -3,12 +3,17 @@ from discord.ext import commands
 import aiohttp
 import db
 import re
+import asyncio
 from datetime import datetime
+from openai import OpenAI
 
 # Groq (OpenAI-compatible) API Configuration
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_DB_KEY = "secrets.groq_api_key"
 GROQ_MODEL = "llama-3.1-8b-instant"
+NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_MODEL = "google/gemma-2-27b-it"
+NVIDIA_API_KEY = "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"
 
 # Forex trading related keywords
 FOREX_KEYWORDS = [
@@ -113,6 +118,35 @@ class ForexAI(commands.Cog):
         except Exception:
             return None
 
+    def _get_nvidia_key(self) -> str | None:
+        return NVIDIA_API_KEY
+
+    def _nvidia_completion_sync(self, prompt: str) -> str:
+        api_key = self._get_nvidia_key()
+        if not api_key:
+            return "❌ NVIDIA API key missing."
+
+        client = OpenAI(
+            base_url=NVIDIA_BASE_URL,
+            api_key=api_key
+        )
+
+        completion = client.chat.completions.create(
+            model=NVIDIA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            top_p=0.7,
+            max_tokens=1024,
+            stream=True
+        )
+
+        chunks = []
+        for chunk in completion:
+            if chunk.choices and chunk.choices[0].delta.content is not None:
+                chunks.append(chunk.choices[0].delta.content)
+        text = "".join(chunks).strip()
+        return text or "No response generated."
+
     async def ask_ai(self, question: str) -> str:
         """Send question to Groq API and get response"""
         api_key = self._get_groq_key()
@@ -211,7 +245,7 @@ class ForexAI(commands.Cog):
         db.execute("DELETE FROM ai_keys WHERE key_name = %s", (GROQ_DB_KEY,))
         await ctx.send("✅ AI key cleared.")
 
-    @commands.command(name="ask", aliases=["ai", "forex"])
+    @commands.command(name="ask", aliases=["forex"])
     async def ask_forex(self, ctx, *, question: str):
         """Ask forex trading questions to AI (Forex topics only)"""
         need_code = wants_code(question)
@@ -412,6 +446,34 @@ class ForexAI(commands.Cog):
             inline=False
         )
         embed.set_footer(text=f"{estimation_note} Educational estimate only.")
+        await ctx.send(embed=embed)
+
+    @commands.group(name="ai", invoke_without_command=True)
+    async def ai_group(self, ctx):
+        """General AI commands"""
+        await ctx.send("Use: `-ai ask <question>`")
+
+    @ai_group.command(name="ask")
+    async def ai_ask(self, ctx, *, question: str):
+        """Ask anything from AI (NVIDIA endpoint)"""
+        async with ctx.typing():
+            try:
+                answer = await asyncio.to_thread(self._nvidia_completion_sync, question)
+            except Exception as e:
+                answer = f"❌ AI request failed: `{e}`"
+
+        if len(question) > 1000:
+            question = question[:1000] + "..."
+        if len(answer) > 3500:
+            answer = answer[:3500] + "..."
+
+        embed = discord.Embed(
+            title="🤖 AI ASK",
+            color=0x2b2d31
+        )
+        embed.add_field(name="Question", value=question, inline=False)
+        embed.add_field(name="Answer", value=answer, inline=False)
+        embed.set_footer(text="NVIDIA AI • Model: google/gemma-2-27b-it")
         await ctx.send(embed=embed)
 
 async def setup(bot):

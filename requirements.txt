@@ -3,3 +3,4 @@ aiohttp
 pytz
 python-dotenv
 psycopg2-binary
+openai
