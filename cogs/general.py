@@ -443,6 +443,24 @@ class General(commands.Cog):
         embed.set_footer(text=f"User: {ctx.author.name} • Deep Sleep Mode")
         await ctx.send(embed=embed)
 
+    @commands.command(name="dev", aliases=["developer"])
+    async def developer_info(self, ctx):
+        """Show bot developer information"""
+        developer_id = 1170979888019292261
+        embed = discord.Embed(
+            title="👨‍💻 BOT DEVELOPER",
+            description=(
+                f"**Developer:** <@{developer_id}>\n"
+                f"**ID:** `{developer_id}`\n"
+                "**Username:** `90_alones`\n"
+                "**Name:** `fahad`\n"
+                "**Note:** `Single developer of this bot`"
+            ),
+            color=0x2b2d31
+        )
+        embed.set_footer(text="TRADERS UNION • Developer Info")
+        await ctx.send(embed=embed)
+
     @commands.command(name="help")
     async def help_command(self, ctx):
         """Show the interactive Traders Union Help Terminal"""
