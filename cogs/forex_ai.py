@@ -4,16 +4,20 @@ import aiohttp
 import db
 import re
 import asyncio
+import requests
+import json
+import base64
+import io
 from datetime import datetime
-from openai import OpenAI
 
 # Groq (OpenAI-compatible) API Configuration
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_DB_KEY = "secrets.groq_api_key"
 GROQ_MODEL = "llama-3.1-8b-instant"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NVIDIA_MODEL = "google/gemma-2-27b-it"
-NVIDIA_API_KEY = "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"
+NVIDIA_MODEL = "moonshotai/kimi-k2.5"
+NVIDIA_IMAGE_MODEL = "black-forest-labs/flux.1-schnell"
+NVIDIA_API_KEY = "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"
 
 # Forex trading related keywords
 FOREX_KEYWORDS = [
@@ -125,27 +129,94 @@ class ForexAI(commands.Cog):
         api_key = self._get_nvidia_key()
         if not api_key:
             return "❌ NVIDIA API key missing."
+        invoke_url = f"{NVIDIA_BASE_URL}/chat/completions"
+        stream = True
 
-        client = OpenAI(
-            base_url=NVIDIA_BASE_URL,
-            api_key=api_key
-        )
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "text/event-stream" if stream else "application/json",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": NVIDIA_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 16384,
+            "temperature": 1.00,
+            "top_p": 1.00,
+            "stream": stream,
+            "chat_template_kwargs": {"thinking": True},
+        }
 
-        completion = client.chat.completions.create(
-            model=NVIDIA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-            top_p=0.7,
-            max_tokens=1024,
-            stream=True
-        )
+        response = requests.post(invoke_url, headers=headers, json=payload, stream=stream, timeout=180)
+        if response.status_code != 200:
+            return f"❌ AI request failed: `{response.status_code} {response.text[:300]}`"
 
-        chunks = []
-        for chunk in completion:
-            if chunk.choices and chunk.choices[0].delta.content is not None:
-                chunks.append(chunk.choices[0].delta.content)
+        if not stream:
+            try:
+                j = response.json()
+                return j["choices"][0]["message"]["content"]
+            except Exception:
+                return "❌ Invalid AI response payload."
+
+        chunks: list[str] = []
+        for line in response.iter_lines():
+            if not line:
+                continue
+            decoded = line.decode("utf-8", errors="ignore").strip()
+            if not decoded.startswith("data:"):
+                continue
+            data = decoded[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                obj = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            delta = ((obj.get("choices") or [{}])[0].get("delta") or {})
+            content = delta.get("content")
+            if content:
+                chunks.append(content)
+
         text = "".join(chunks).strip()
         return text or "No response generated."
+
+    def _nvidia_image_sync(self, prompt: str) -> tuple[bytes | None, str | None]:
+        api_key = self._get_nvidia_key()
+        if not api_key:
+            return None, "❌ NVIDIA API key missing."
+
+        invoke_url = f"{NVIDIA_BASE_URL}/images/generations"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": NVIDIA_IMAGE_MODEL,
+            "prompt": prompt,
+            "size": "1024x1024",
+            "response_format": "b64_json",
+        }
+
+        response = requests.post(invoke_url, headers=headers, json=payload, timeout=180)
+        if response.status_code != 200:
+            return None, f"❌ Image generation failed: `{response.status_code} {response.text[:300]}`"
+
+        try:
+            data = response.json()
+            first = (data.get("data") or [{}])[0]
+            b64 = first.get("b64_json")
+            if b64:
+                return base64.b64decode(b64), None
+            url = first.get("url")
+            if url:
+                img_resp = requests.get(url, timeout=120)
+                if img_resp.status_code == 200:
+                    return img_resp.content, None
+                return None, f"❌ Generated image URL fetch failed: `{img_resp.status_code}`"
+            return None, "❌ No image data returned by provider."
+        except Exception as e:
+            return None, f"❌ Invalid image response: `{e}`"
 
     async def ask_ai(self, question: str) -> str:
         """Send question to Groq API and get response"""
@@ -451,13 +522,36 @@ class ForexAI(commands.Cog):
     @commands.group(name="ai", invoke_without_command=True)
     async def ai_group(self, ctx):
         """General AI commands"""
-        await ctx.send("Use: `-ai ask <question>`")
+        await ctx.send("Use: `-ai ask <question>` or `-ai ask image: <prompt>`")
 
     @ai_group.command(name="ask")
     async def ai_ask(self, ctx, *, question: str):
         """Ask anything from AI (NVIDIA endpoint)"""
+        is_image_mode = question.lower().startswith(("image:", "img:", "pic:"))
+        image_prompt = question.split(":", 1)[1].strip() if is_image_mode and ":" in question else question.strip()
+
+        if is_image_mode and not image_prompt:
+            return await ctx.send("❌ Use: `-ai ask image: <prompt>`")
+
         async with ctx.typing():
             try:
+                if is_image_mode:
+                    image_bytes, img_err = await asyncio.to_thread(self._nvidia_image_sync, image_prompt)
+                    if img_err:
+                        return await ctx.send(img_err)
+                    if not image_bytes:
+                        return await ctx.send("❌ No image generated.")
+
+                    file = discord.File(io.BytesIO(image_bytes), filename="ai-image.png")
+                    embed = discord.Embed(
+                        title="🖼️ AI IMAGE",
+                        description=f"```text\n{image_prompt[:1000]}\n```",
+                        color=0x2b2d31
+                    )
+                    embed.set_image(url="attachment://ai-image.png")
+                    embed.set_footer(text=f"NVIDIA AI • Model: {NVIDIA_IMAGE_MODEL}")
+                    return await ctx.send(embed=embed, file=file)
+
                 answer = await asyncio.to_thread(self._nvidia_completion_sync, question)
             except Exception as e:
                 answer = f"❌ AI request failed: `{e}`"
