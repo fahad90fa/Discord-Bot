@@ -17,6 +17,7 @@ GROQ_MODEL = "llama-3.1-8b-instant"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NVIDIA_MODEL = "moonshotai/kimi-k2.5"
 NVIDIA_IMAGE_MODEL = "black-forest-labs/flux.1-schnell"
+NVIDIA_IMAGE_INVOKE_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell"
 NVIDIA_API_KEY = "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"
 NVIDIA_IMAGE_API_KEY = "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"
 NVIDIA_FAST_MAX_TOKENS = 512
@@ -234,35 +235,65 @@ class ForexAI(commands.Cog):
         if not api_key:
             return None, "❌ NVIDIA API key missing."
 
-        invoke_url = f"{NVIDIA_BASE_URL}/images/generations"
+        invoke_url = NVIDIA_IMAGE_INVOKE_URL
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+        w, h = (512, 512)
+        try:
+            parts = NVIDIA_IMAGE_SIZE.lower().split("x")
+            if len(parts) == 2:
+                w = int(parts[0])
+                h = int(parts[1])
+        except Exception:
+            pass
+
         payload = {
-            "model": NVIDIA_IMAGE_MODEL,
             "prompt": prompt,
-            "size": NVIDIA_IMAGE_SIZE,
-            "response_format": "b64_json",
+            "width": w,
+            "height": h,
+            "steps": 4,
+            "seed": 0,
         }
 
         response = requests.post(invoke_url, headers=headers, json=payload, timeout=90)
         if response.status_code != 200:
             return None, f"❌ Image generation failed: `{response.status_code} {response.text[:300]}`"
 
+        ctype = (response.headers.get("content-type") or "").lower()
+        if ctype.startswith("image/"):
+            return response.content, None
+
         try:
             data = response.json()
+
+            # Common OpenAI-like format.
             first = (data.get("data") or [{}])[0]
             b64 = first.get("b64_json")
             if b64:
                 return base64.b64decode(b64), None
-            url = first.get("url")
+
+            # Common NVCF/GenAI artifacts format.
+            artifacts = data.get("artifacts") or []
+            if artifacts and isinstance(artifacts[0], dict):
+                b64 = artifacts[0].get("base64")
+                if b64:
+                    return base64.b64decode(b64), None
+
+            # Some endpoints return plain "image" base64.
+            if data.get("image"):
+                return base64.b64decode(data["image"]), None
+
+            # URL fallback if provider returns hosted image URL.
+            url = first.get("url") or data.get("url")
             if url:
                 img_resp = requests.get(url, timeout=120)
                 if img_resp.status_code == 200:
                     return img_resp.content, None
                 return None, f"❌ Generated image URL fetch failed: `{img_resp.status_code}`"
+
             return None, "❌ No image data returned by provider."
         except Exception as e:
             return None, f"❌ Invalid image response: `{e}`"
