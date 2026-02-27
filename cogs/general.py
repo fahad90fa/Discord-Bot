@@ -1,8 +1,56 @@
 import discord
 from discord.ext import commands
 import asyncio
+import random
 from datetime import datetime, timezone
 from .utils import load_afk, save_afk
+
+ROAST_OPENERS = [
+    "You move like",
+    "You think like",
+    "You roast like",
+    "You plan like",
+    "You code like",
+    "You argue like",
+    "You flex like",
+    "You react like",
+    "You lead like",
+    "You game like",
+]
+
+ROAST_MIDDLES = [
+    "a lagging calculator",
+    "an offline GPS",
+    "a muted microphone",
+    "a cracked compass",
+    "a buffering stream",
+    "a broken keyboard",
+    "a low-battery drone",
+    "a frozen loading bar",
+    "a sleepy firewall",
+    "a confused autocorrect",
+]
+
+ROAST_ENDINGS = [
+    "on 1% battery.",
+    "during a software update.",
+    "with no internet.",
+    "in airplane mode.",
+    "after three system errors.",
+    "inside a power outage.",
+    "while the app is crashing.",
+    "with the tutorial still open.",
+    "during peak lag hour.",
+    "while asking for admin rights.",
+]
+
+# Keep exactly 100 ready-to-use roast lines.
+ROAST_LINES = [
+    f"{opener} {middle} {ending}"
+    for opener in ROAST_OPENERS
+    for middle in ROAST_MIDDLES
+    for ending in ROAST_ENDINGS
+][:100]
 
 class TTTButton(discord.ui.Button):
     def __init__(self, x: int, y: int):
@@ -385,6 +433,26 @@ class General(commands.Cog):
                 f"**Bots:** `{bot_members}`"
             ),
         )
+        await ctx.send(embed=embed)
+
+    @commands.command(name="roast")
+    @commands.guild_only()
+    async def roast(self, ctx, member: discord.Member = None):
+        """Roast a user. Usage: -roast @user"""
+        if member is None:
+            return await ctx.send("❌ Use: `-roast @user`")
+        if member.id == ctx.author.id:
+            return await ctx.send("❌ Khud ko roast nahi kar sakte.")
+        if member.bot:
+            return await ctx.send("❌ Bots ko roast mat karo.")
+
+        line = random.choice(ROAST_LINES)
+        embed = discord.Embed(
+            title="🔥 ROAST",
+            description=f"{member.mention} {line}",
+            color=0xe74c3c,
+        )
+        embed.set_footer(text=f"Requested by {ctx.author}")
         await ctx.send(embed=embed)
 
     @commands.command(name="ttt", aliases=["tictactoe", "tic"])
