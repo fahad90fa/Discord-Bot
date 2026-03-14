@@ -229,6 +229,108 @@ class Utility(commands.Cog):
         await load_msg.delete()
         await ctx.send(embed=embed)
 
+    @commands.command(name="serverinfo", aliases=['si'])
+    @commands.guild_only()
+    async def serverinfo(self, ctx):
+        """Deep scan the current server mainframe using the Quantum Terminal interface"""
+        guild = ctx.guild
+        
+        load_msg = await ctx.send(f"💾 `INITIALIZING SCAN FOR {guild.name.upper()}...`")
+        await asyncio.sleep(0.5)
+        await load_msg.edit(content="🛰️ `CONNECTING TO GUILD METADATA ENGINE...`")
+        await asyncio.sleep(0.5)
+        await load_msg.edit(content="💎 `DECRYPTING SECTOR ARCHITECTURE...`")
+
+        # Member Stats
+        total_members = guild.member_count
+        humans = len([m for m in guild.members if not m.bot])
+        bots = len([m for m in guild.members if m.bot])
+        
+        online = len([m for m in guild.members if m.status == discord.Status.online])
+        idle = len([m for m in guild.members if m.status == discord.Status.idle])
+        dnd = len([m for m in guild.members if m.status == discord.Status.dnd])
+        offline = len([m for m in guild.members if m.status == discord.Status.offline])
+
+        # Channel Stats
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+        stage_channels = len(guild.stage_channels)
+        forum_channels = len(guild.forum_channels)
+        total_channels = text_channels + voice_channels + stage_channels + forum_channels
+
+        # Other Stats
+        roles = len(guild.roles)
+        emojis = len(guild.emojis)
+        stickers = len(guild.stickers)
+        boost_level = guild.premium_tier
+        boost_count = guild.premium_subscription_count
+        
+        created_at = guild.created_at.strftime("%b %d, %Y")
+        server_age = (discord.utils.utcnow() - guild.created_at).days
+        
+        owner = guild.owner
+        verif_level = str(guild.verification_level).replace("_", " ").title()
+        content_filter = str(guild.explicit_content_filter).replace("_", " ").title()
+        
+        logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
+        
+        embed = discord.Embed(title=f"| GUILD INTELLIGENCE | {guild.name.upper()}", color=0x2b2d31)
+        embed.set_author(name="TRADERS UNION TERMINAL", icon_url=logo)
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        if guild.banner:
+            embed.set_image(url=guild.banner.url)
+
+        mainframe_block = (
+            "```ansi\n"
+            f"\u001b[1;36mGUILD OWNER   :\u001b[0m \u001b[0;37m{owner} ({owner.id})\u001b[0m\n"
+            f"\u001b[1;36mSECTOR ID     :\u001b[0m \u001b[0;37m{guild.id}\u001b[0m\n"
+            f"\u001b[1;36mCREATED ON    :\u001b[0m \u001b[0;37m{created_at} ({server_age} days ago)\u001b[0m\n"
+            f"\u001b[1;36mVERIFICATION  :\u001b[0m \u001b[0;37m{verif_level}\u001b[0m\n"
+            "```"
+        )
+        embed.add_field(name="🏢 MAINFRAME SIGNATURE", value=mainframe_block, inline=False)
+
+        population_block = (
+            "```ansi\n"
+            f"\u001b[1;32mTOTAL ENTITIES :\u001b[0m \u001b[0;37m{total_members}\u001b[0m\n"
+            f"\u001b[1;32mHUMAN SIGNALS  :\u001b[0m \u001b[0;37m{humans}\u001b[0m\n"
+            f"\u001b[1;32mBOT SIGNALS    :\u001b[0m \u001b[0;37m{bots}\u001b[0m\n"
+            f"\u001b[1;32mACTIVE RADAR   :\u001b[0m \u001b[0;37mONL: {online} | IDL: {idle} | DND: {dnd}\u001b[0m\n"
+            "```"
+        )
+        embed.add_field(name="👥 POPULATION DENSITY", value=population_block, inline=False)
+
+        architecture_block = (
+            "```ansi\n"
+            f"\u001b[1;34mTOTAL CHANNELS :\u001b[0m \u001b[0;37m{total_channels}\u001b[0m\n"
+            f"\u001b[1;34mTEXT / VOICE   :\u001b[0m \u001b[0;37m{text_channels} / {voice_channels}\u001b[0m\n"
+            f"\u001b[1;34mCATEGORIES     :\u001b[0m \u001b[0;37m{categories}\u001b[0m\n"
+            f"\u001b[1;34mSTAGE / FORUM  :\u001b[0m \u001b[0;37m{stage_channels} / {forum_channels}\u001b[0m\n"
+            "```"
+        )
+        embed.add_field(name="🛰️ SECTOR ARCHITECTURE", value=architecture_block, inline=False)
+
+        asset_block = (
+            "```ansi\n"
+            f"\u001b[1;35mTOTAL ROLES    :\u001b[0m \u001b[0;37m{roles}\u001b[0m\n"
+            f"\u001b[1;35mEMOJIS / STICK :\u001b[0m \u001b[0;37m{emojis} / {stickers}\u001b[0m\n"
+            f"\u001b[1;35mBOOST LEVEL    :\u001b[0m \u001b[0;37mTier {boost_level} ({boost_count} Boosts)\u001b[0m\n"
+            f"\u001b[1;35mVANITY URL     :\u001b[0m \u001b[0;37m{guild.vanity_url or 'None'}\u001b[0m\n"
+            "```"
+        )
+        embed.add_field(name="💎 GUILD ASSETS", value=asset_block, inline=False)
+
+        if guild.features:
+            features = ", ".join(f"`{f.replace('_', ' ').lower()}`" for f in guild.features[:15])
+            embed.add_field(name="🛠️ ENHANCED PROTOCOLS", value=features, inline=False)
+
+        embed.set_footer(text=f"Deep Scan Complete • Traders Union Intelligence • {ctx.author.name}", icon_url=ctx.author.display_avatar.url)
+        
+        await load_msg.delete()
+        await ctx.send(embed=embed)
+
     @commands.command(name="stealsticker")
     @is_owner_check()
     @commands.guild_only()
