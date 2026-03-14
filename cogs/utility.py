@@ -256,7 +256,7 @@ class Utility(commands.Cog):
         voice_channels = len(guild.voice_channels)
         categories = len(guild.categories)
         stage_channels = len(guild.stage_channels)
-        forum_channels = len(guild.forum_channels)
+        forum_channels = len(getattr(guild, "forum_channels", []))
         total_channels = text_channels + voice_channels + stage_channels + forum_channels
 
         # Other Stats
