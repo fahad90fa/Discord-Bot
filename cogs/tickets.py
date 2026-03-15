@@ -118,8 +118,8 @@ def _build_overwrites(guild, user, staff_roles):
     for rid in staff_roles:
         role = guild.get_role(int(rid))
         if role:
-            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True)
-    overwrites[guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True, read_message_history=True)
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
+    overwrites[guild.me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
     return overwrites
 
 
@@ -255,8 +255,7 @@ class TicketReasonSelect(discord.ui.Select):
             channel = await interaction.guild.create_text_channel(
                 name=channel_name,
                 category=category,
-                overwrites=overwrites,
-                reason=f"Ticket opened by {interaction.user}"
+                overwrites=overwrites
             )
 
             open_tickets[str(channel.id)] = {
@@ -335,13 +334,12 @@ async def close_ticket_channel(bot, channel: discord.TextChannel, closed_by: dis
                     owner,
                     view_channel=False,
                     send_messages=False,
-                    read_message_history=False,
-                    reason=f"Ticket closed by {closed_by}"
+                    read_message_history=False
                 )
 
         close_tag = f"{channel.id % 10000:04d}"
         archived_name = f"closed-{close_tag}"
-        await channel.edit(name=archived_name, reason=f"Ticket archived by {closed_by}")
+        await channel.edit(name=archived_name)
         try:
             await channel.send(
                 f"✅ Ticket archived by {closed_by.mention}. "
@@ -449,7 +447,7 @@ class Tickets(commands.Cog):
         safe_name = new_name.strip().lower().replace(" ", "-")[:90]
         if not safe_name:
             return await ctx.send("❌ Invalid name.")
-        await ctx.channel.edit(name=safe_name, reason=f"Ticket renamed by {ctx.author}")
+        await ctx.channel.edit(name=safe_name)
         await ctx.send(f"✅ Renamed to `{safe_name}`")
 
     @ticket_group.command(name="add")
