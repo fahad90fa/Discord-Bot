@@ -216,6 +216,22 @@ class Admin(commands.Cog):
             save_data(data, ctx.guild.id)
             await ctx.send(f"❌ Removed <@{user_id}> from **Mods**")
 
+    @commands.command(name="off")
+    @is_botowner()
+    async def bot_off(self, ctx):
+        """Turn off all bot commands for this server (Owner Only)"""
+        from .utils import set_bot_enabled
+        set_bot_enabled(ctx.guild.id, False)
+        await ctx.send("🛑 `BOT COMMANDS DEACTIVATED. ONLY STATUS MENTION REMAINS ACTIVE.`")
+
+    @commands.command(name="on")
+    @is_botowner()
+    async def bot_on(self, ctx):
+        """Turn on all bot commands for this server (Owner Only)"""
+        from .utils import set_bot_enabled
+        set_bot_enabled(ctx.guild.id, True)
+        await ctx.send("✅ `BOT COMMANDS ACTIVATED.`")
+
     @commands.command()
     @is_botowner()
     async def addowner(self, ctx, user: discord.User):

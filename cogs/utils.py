@@ -11,6 +11,20 @@ ANTILINK_FILE = "antilink.json"
 ANTISPAM_FILE = "antispam.json"
 AUTOMOD_FILE = "automod.json"
 
+def get_bot_enabled(guild_id):
+    row = db.execute(
+        "SELECT bot_enabled FROM bot_settings WHERE guild_id = %s",
+        (int(guild_id),),
+        fetchone=True
+    )
+    return row["bot_enabled"] if row else True
+
+def set_bot_enabled(guild_id, enabled: bool):
+    db.execute(
+        "INSERT INTO bot_settings (guild_id, bot_enabled) VALUES (%s, %s) ON CONFLICT (guild_id) DO UPDATE SET bot_enabled = EXCLUDED.bot_enabled",
+        (int(guild_id), bool(enabled))
+    )
+
 def load_afk(guild_id=None):
     if guild_id is None:
         return {}

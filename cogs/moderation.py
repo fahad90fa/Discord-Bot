@@ -26,8 +26,15 @@ class Moderation(commands.Cog):
 
     @commands.command()
     @is_owner_check()
+    @commands.has_permissions(kick_members=True)
     async def kick(self, ctx, member: discord.Member, *, reason="No reason provided"):
         """Execute KICK sequence on a target entity"""
+        if not ctx.guild.me.guild_permissions.kick_members:
+            return await ctx.send("❌ `ACCESS DENIED: BOT LACKS KICK_MEMBERS PERMISSION`")
+        
+        if member.top_role >= ctx.guild.me.top_role:
+            return await ctx.send("❌ `ACCESS DENIED: TARGET ENTITY HAS SUPERIOR OR EQUAL HIERARCHY`")
+
         load_msg = await ctx.send("👢 `EXECUTING DISCONNECT SEQUENCE...`")
         await member.kick(reason=reason)
         await asyncio.sleep(0.5)
@@ -50,8 +57,15 @@ class Moderation(commands.Cog):
 
     @commands.command()
     @is_owner_check()
+    @commands.has_permissions(moderate_members=True)
     async def mute(self, ctx, member: discord.Member, minutes: int = 60, *, reason="No reason provided"):
         """Execute TIMEOUT sequence on a target entity"""
+        if not ctx.guild.me.guild_permissions.moderate_members:
+            return await ctx.send("❌ `ACCESS DENIED: BOT LACKS MODERATE_MEMBERS PERMISSION`")
+        
+        if member.top_role >= ctx.guild.me.top_role:
+            return await ctx.send("❌ `ACCESS DENIED: TARGET ENTITY HAS SUPERIOR OR EQUAL HIERARCHY`")
+
         load_msg = await ctx.send("⏳ `ISOLATING ENTITY FROM COMMS...`")
         await member.timeout(timedelta(minutes=minutes), reason=reason)
         await asyncio.sleep(0.5)
@@ -74,7 +88,14 @@ class Moderation(commands.Cog):
 
     @commands.command()
     @is_owner_check()
+    @commands.has_permissions(moderate_members=True)
     async def unmute(self, ctx, member: discord.Member):
+        if not ctx.guild.me.guild_permissions.moderate_members:
+            return await ctx.send("❌ `ACCESS DENIED: BOT LACKS MODERATE_MEMBERS PERMISSION`")
+        
+        if member.top_role >= ctx.guild.me.top_role:
+            return await ctx.send("❌ `ACCESS DENIED: TARGET ENTITY HAS SUPERIOR OR EQUAL HIERARCHY`")
+
         await member.timeout(None)
         await ctx.send(f"🔓 Timeout removed for {member}")
         await send_modlog(self.bot, ctx, "UnMute", target=member)
@@ -126,8 +147,15 @@ class Moderation(commands.Cog):
 
     @commands.command()
     @is_owner_check()
+    @commands.has_permissions(ban_members=True)
     async def ban(self, ctx, member: discord.Member, *, reason="No reason provided"):
         """Execute TERMINATE sequence on a target entity"""
+        if not ctx.guild.me.guild_permissions.ban_members:
+            return await ctx.send("❌ `ACCESS DENIED: BOT LACKS BAN_MEMBERS PERMISSION`")
+        
+        if member.top_role >= ctx.guild.me.top_role:
+            return await ctx.send("❌ `ACCESS DENIED: TARGET ENTITY HAS SUPERIOR OR EQUAL HIERARCHY`")
+
         data = load_data(ctx.guild.id)
         ban_limits = load_ban_limits(ctx.guild.id)
         admin_id = str(ctx.author.id)
@@ -155,7 +183,10 @@ class Moderation(commands.Cog):
 
     @commands.command()
     @is_owner_check()
+    @commands.has_permissions(ban_members=True)
     async def unban(self, ctx, user_id: int):
+        if not ctx.guild.me.guild_permissions.ban_members:
+            return await ctx.send("❌ `ACCESS DENIED: BOT LACKS BAN_MEMBERS PERMISSION`")
         user = await self.bot.fetch_user(user_id)
         await ctx.guild.unban(user)
         await ctx.send(f"🔓 Unbanned {user}")

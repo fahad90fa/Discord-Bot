@@ -100,6 +100,25 @@ async def on_message(message):
 
     await bot.process_commands(message)
 
+# Global Command Filter
+@bot.check
+async def global_check(ctx):
+    from cogs.utils import get_bot_enabled, load_data
+    if not ctx.guild:
+        return True
+        
+    enabled = get_bot_enabled(ctx.guild.id)
+    if enabled:
+        return True
+        
+    # If disabled, only allow 'on' command if used by owner
+    if ctx.command and ctx.command.name == "on":
+        data = load_data(ctx.guild.id)
+        is_owner = ctx.author.id in data.get("owners", []) or await bot.is_owner(ctx.author)
+        return is_owner
+        
+    return False
+
 # Run Global Security Protocol
 if __name__ == "__main__":
     # Prefer Railway/dashboard env vars, but keep local .env compatibility.

@@ -427,6 +427,14 @@ def init_db():
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bot_settings (
+                  guild_id BIGINT PRIMARY KEY,
+                  bot_enabled BOOLEAN NOT NULL DEFAULT TRUE
+                )
+                """
+            )
             _conn.commit()
         except Exception:
             _conn.rollback()
