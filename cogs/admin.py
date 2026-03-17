@@ -232,6 +232,28 @@ class Admin(commands.Cog):
         set_global_enabled(True)
         await ctx.send("✅ `BOT COMMANDS ACTIVATED GLOBALLY.`")
 
+    @commands.group(name="error", invoke_without_command=True)
+    @is_botowner()
+    async def error_group(self, ctx):
+        """Global bot error simulation group"""
+        await ctx.send("Usage: `-error on` / `-error off`")
+
+    @error_group.command(name="on")
+    @is_botowner()
+    async def error_on(self, ctx):
+        """Enable global error simulation (Owner Only)"""
+        from .utils import set_error_mode
+        set_error_mode(True)
+        await ctx.send("🚨 `GLOBAL ERROR SIMULATION ACTIVATED.`")
+
+    @error_group.command(name="off")
+    @is_botowner()
+    async def error_off(self, ctx):
+        """Disable global error simulation (Owner Only)"""
+        from .utils import set_error_mode
+        set_error_mode(False)
+        await ctx.send("✅ `GLOBAL ERROR SIMULATION DEACTIVATED.`")
+
     @commands.command()
     @is_botowner()
     async def addowner(self, ctx, user: discord.User):

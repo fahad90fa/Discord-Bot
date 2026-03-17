@@ -103,9 +103,27 @@ async def on_message(message):
 # Global Command Filter
 @bot.check
 async def global_check(ctx):
-    from cogs.utils import get_global_enabled, load_data
+    from cogs.utils import get_global_settings, load_data
     
-    enabled = get_global_enabled()
+    settings = get_global_settings()
+    enabled = settings["bot_enabled"]
+    error_mode = settings["error_mode"]
+
+    # Handle Error Mode first
+    if error_mode:
+        # If error mode is ON, only allow 'error off' and 'on' for owners.
+        # Everything else shows the version error.
+        is_bypass = ctx.command and ctx.command.name in ["on", "error"]
+        guild_id = ctx.guild.id if ctx.guild else None
+        data = load_data(guild_id)
+        is_owner = ctx.author.id in data.get("owners", []) or await bot.is_owner(ctx.author)
+        
+        if is_bypass and is_owner:
+            return True
+            
+        await ctx.send("your code has old python version and using old python version please update your code and version")
+        return False
+    
     if enabled:
         return True
         

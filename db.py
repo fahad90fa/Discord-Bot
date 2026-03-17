@@ -431,11 +431,13 @@ def init_db():
                 """
                 CREATE TABLE IF NOT EXISTS global_bot_settings (
                   id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-                  bot_enabled BOOLEAN NOT NULL DEFAULT TRUE
+                  bot_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                  error_mode BOOLEAN NOT NULL DEFAULT FALSE
                 )
                 """
             )
-            cur.execute("INSERT INTO global_bot_settings (id, bot_enabled) VALUES (1, TRUE) ON CONFLICT DO NOTHING")
+            cur.execute("ALTER TABLE global_bot_settings ADD COLUMN IF NOT EXISTS error_mode BOOLEAN NOT NULL DEFAULT FALSE")
+            cur.execute("INSERT INTO global_bot_settings (id, bot_enabled, error_mode) VALUES (1, TRUE, FALSE) ON CONFLICT DO NOTHING")
             _conn.commit()
         except Exception:
             _conn.rollback()
