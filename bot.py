@@ -103,17 +103,16 @@ async def on_message(message):
 # Global Command Filter
 @bot.check
 async def global_check(ctx):
-    from cogs.utils import get_bot_enabled, load_data
-    if not ctx.guild:
-        return True
-        
-    enabled = get_bot_enabled(ctx.guild.id)
+    from cogs.utils import get_global_enabled, load_data
+    
+    enabled = get_global_enabled()
     if enabled:
         return True
         
     # If disabled, only allow 'on' command if used by owner
     if ctx.command and ctx.command.name == "on":
-        data = load_data(ctx.guild.id)
+        guild_id = ctx.guild.id if ctx.guild else None
+        data = load_data(guild_id)
         is_owner = ctx.author.id in data.get("owners", []) or await bot.is_owner(ctx.author)
         return is_owner
         

@@ -219,18 +219,18 @@ class Admin(commands.Cog):
     @commands.command(name="off")
     @is_botowner()
     async def cmd_off(self, ctx):
-        """Turn off all bot commands for this server (Owner Only)"""
-        from .utils import set_bot_enabled
-        set_bot_enabled(ctx.guild.id, False)
-        await ctx.send("🛑 `BOT COMMANDS DEACTIVATED. ONLY STATUS MENTION REMAINS ACTIVE.`")
+        """Turn off all bot commands globally (Owner Only)"""
+        from .utils import set_global_enabled
+        set_global_enabled(False)
+        await ctx.send("🛑 `BOT COMMANDS DEACTIVATED GLOBALLY. ONLY STATUS MENTION REMAINS ACTIVE.`")
 
     @commands.command(name="on")
     @is_botowner()
     async def cmd_on(self, ctx):
-        """Turn on all bot commands for this server (Owner Only)"""
-        from .utils import set_bot_enabled
-        set_bot_enabled(ctx.guild.id, True)
-        await ctx.send("✅ `BOT COMMANDS ACTIVATED.`")
+        """Turn on all bot commands globally (Owner Only)"""
+        from .utils import set_global_enabled
+        set_global_enabled(True)
+        await ctx.send("✅ `BOT COMMANDS ACTIVATED GLOBALLY.`")
 
     @commands.command()
     @is_botowner()
