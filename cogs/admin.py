@@ -218,7 +218,7 @@ class Admin(commands.Cog):
 
     @commands.command(name="off")
     @is_botowner()
-    async def bot_off(self, ctx):
+    async def cmd_off(self, ctx):
         """Turn off all bot commands for this server (Owner Only)"""
         from .utils import set_bot_enabled
         set_bot_enabled(ctx.guild.id, False)
@@ -226,7 +226,7 @@ class Admin(commands.Cog):
 
     @commands.command(name="on")
     @is_botowner()
-    async def bot_on(self, ctx):
+    async def cmd_on(self, ctx):
         """Turn on all bot commands for this server (Owner Only)"""
         from .utils import set_bot_enabled
         set_bot_enabled(ctx.guild.id, True)
