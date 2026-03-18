@@ -11,27 +11,6 @@ ANTILINK_FILE = "antilink.json"
 ANTISPAM_FILE = "antispam.json"
 AUTOMOD_FILE = "automod.json"
 
-def get_global_settings():
-    row = db.execute(
-        "SELECT bot_enabled, error_mode FROM global_bot_settings WHERE id = 1",
-        fetchone=True
-    )
-    if not row:
-        return {"bot_enabled": True, "error_mode": False}
-    return {"bot_enabled": row["bot_enabled"], "error_mode": row["error_mode"]}
-
-def set_global_enabled(enabled: bool):
-    db.execute(
-        "UPDATE global_bot_settings SET bot_enabled = %s WHERE id = 1",
-        (bool(enabled),)
-    )
-
-def set_error_mode(enabled: bool):
-    db.execute(
-        "UPDATE global_bot_settings SET error_mode = %s WHERE id = 1",
-        (bool(enabled),)
-    )
-
 def load_afk(guild_id=None):
     if guild_id is None:
         return {}

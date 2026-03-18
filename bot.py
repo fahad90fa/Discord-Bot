@@ -97,46 +97,6 @@ async def on_message(message):
         embed.set_thumbnail(url=bot.user.display_avatar.url)
         embed.set_footer(text="Traders Union v4.0 • Level 5 Authorization")
         await message.channel.send(embed=embed)
-        return
-
-    # Global Command Check
-    ctx = await bot.get_context(message)
-    if ctx.valid:
-        from cogs.utils import get_global_settings, load_data
-        settings = get_global_settings()
-        enabled = settings["bot_enabled"]
-        error_mode = settings["error_mode"]
-
-        # 1. Check Error Mode
-        if error_mode:
-            # Allow recovery commands for owners
-            is_recovery = ctx.command and ctx.command.name in ["on", "error"]
-            guild_id = message.guild.id if message.guild else None
-            data = load_data(guild_id)
-            is_owner = message.author.id in data.get("owners", []) or await bot.is_owner(message.author)
-            
-            if is_recovery and is_owner:
-                await bot.invoke(ctx)
-                return
-            
-            # Show error for everything else
-            await message.channel.send("your code has old python version and using old python version please update your code and version")
-            return
-
-        # 2. Check Enabled Status
-        if not enabled:
-            # Allow 'on' command for owners
-            is_on_cmd = ctx.command and ctx.command.name == "on"
-            guild_id = message.guild.id if message.guild else None
-            data = load_data(guild_id)
-            is_owner = message.author.id in data.get("owners", []) or await bot.is_owner(message.author)
-            
-            if is_on_cmd and is_owner:
-                await bot.invoke(ctx)
-                return
-            
-            # Silent for everyone else
-            return
 
     await bot.process_commands(message)
 

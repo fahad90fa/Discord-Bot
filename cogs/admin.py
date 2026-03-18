@@ -216,44 +216,6 @@ class Admin(commands.Cog):
             save_data(data, ctx.guild.id)
             await ctx.send(f"❌ Removed <@{user_id}> from **Mods**")
 
-    @commands.command(name="off")
-    @is_botowner()
-    async def cmd_off(self, ctx):
-        """Turn off all bot commands globally (Owner Only)"""
-        from .utils import set_global_enabled
-        set_global_enabled(False)
-        await ctx.send("🛑 `BOT COMMANDS DEACTIVATED GLOBALLY. ONLY STATUS MENTION REMAINS ACTIVE.`")
-
-    @commands.command(name="on")
-    @is_botowner()
-    async def cmd_on(self, ctx):
-        """Turn on all bot commands globally (Owner Only)"""
-        from .utils import set_global_enabled
-        set_global_enabled(True)
-        await ctx.send("✅ `BOT COMMANDS ACTIVATED GLOBALLY.`")
-
-    @commands.group(name="error", invoke_without_command=True)
-    @is_botowner()
-    async def error_group(self, ctx):
-        """Global bot error simulation group"""
-        await ctx.send("Usage: `-error on` / `-error off`")
-
-    @error_group.command(name="on")
-    @is_botowner()
-    async def error_on(self, ctx):
-        """Enable global error simulation (Owner Only)"""
-        from .utils import set_error_mode
-        set_error_mode(True)
-        await ctx.send("🚨 `GLOBAL ERROR SIMULATION ACTIVATED.`")
-
-    @error_group.command(name="off")
-    @is_botowner()
-    async def error_off(self, ctx):
-        """Disable global error simulation (Owner Only)"""
-        from .utils import set_error_mode
-        set_error_mode(False)
-        await ctx.send("✅ `GLOBAL ERROR SIMULATION DEACTIVATED.`")
-
     @commands.command(name="shutdown", aliases=["stop", "kill"])
     @is_botowner()
     async def shutdown(self, ctx):
