@@ -254,6 +254,13 @@ class Admin(commands.Cog):
         set_error_mode(False)
         await ctx.send("✅ `GLOBAL ERROR SIMULATION DEACTIVATED.`")
 
+    @commands.command(name="shutdown", aliases=["stop", "kill"])
+    @is_botowner()
+    async def shutdown(self, ctx):
+        """Shut down the bot from the backend (Owner Only)"""
+        await ctx.send("🔌 `SHUTTING DOWN SYSTEM... BACKEND DISCONNECTING.`")
+        await self.bot.close()
+
     @commands.command()
     @is_botowner()
     async def addowner(self, ctx, user: discord.User):
