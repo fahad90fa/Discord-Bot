@@ -252,6 +252,128 @@ class TTTView(discord.ui.View):
             except Exception:
                 pass
 
+class General(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.started_at = discord.utils.utcnow()
+
+    @commands.command(name="membercount", aliases=["mc"])
+    async def member_count(self, ctx):
+        """Show server member count"""
+        guild = ctx.guild
+        if guild is None:
+            return await ctx.send("❌ This command can only be used in a server.")
+
+        total_members = guild.member_count or len(guild.members)
+        human_members = sum(1 for m in guild.members if not m.bot)
+        bot_members = sum(1 for m in guild.members if m.bot)
+
+        embed = discord.Embed(
+            title="👥 MEMBER COUNT",
+            color=0x3498db,
+            description=(
+                f"**Server:** {guild.name}\n"
+                f"**Total:** `{total_members}`\n"
+                f"**Humans:** `{human_members}`\n"
+                f"**Bots:** `{bot_members}`"
+            ),
+        )
+        await ctx.send(embed=embed)
+
+    @commands.command(name="roast")
+    @commands.guild_only()
+    async def roast(self, ctx, member: discord.Member = None):
+        """Roast a user. Usage: -roast @user"""
+        if member is None:
+            return await ctx.send("❌ Use: `-roast @user`")
+        if member.id == ctx.author.id:
+            return await ctx.send("❌ Khud ko roast nahi kar sakte.")
+        if member.bot:
+            return await ctx.send("❌ Bots ko roast mat karo.")
+
+        line = random.choice(ROAST_LINES)
+        embed = discord.Embed(
+            title="🔥 ROAST",
+            description=f"{member.mention} {line}",
+            color=0xe74c3c,
+        )
+        embed.set_footer(text=f"Requested by {ctx.author}")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="ttt", aliases=["tictactoe", "tic"])
+    @commands.guild_only()
+    async def ttt_game(self, ctx, *, opponent: str = None):
+        """Play Tic-Tac-Toe with buttons. Usage: -ttt @user | -ttt ai"""
+        player_x = ctx.author
+        ai_mode = False
+        player_o = None
+
+        if opponent is None or opponent.lower().strip() in {"ai", "bot", "cpu"}:
+            ai_mode = True
+        else:
+            try:
+                player_o = await commands.MemberConverter().convert(ctx, opponent)
+            except commands.BadArgument:
+                return await ctx.send("❌ Invalid user. Use `-ttt @user` or `-ttt ai`.")
+            if player_o.bot:
+                return await ctx.send("❌ Use `-ttt ai` for bot mode.")
+            if player_o.id == player_x.id:
+                return await ctx.send("❌ Mention another user or use `-ttt ai`.")
+
+        view = TTTView(player_x, player_o, ai_mode=ai_mode)
+        embed = discord.Embed(
+            title="TIC-TAC-TOE",
+            description=f"Turn: {player_x.mention}",
+            color=0x2b2d31,
+        )
+        embed.add_field(name="Player X", value=player_x.mention, inline=True)
+        embed.add_field(name="Player O", value=(player_o.mention if player_o else "`TTT AI`"), inline=True)
+        embed.set_footer(text="Clean Competitive Mode • Unbeatable AI Enabled")
+        msg = await ctx.send(embed=embed, view=view)
+        view.message = msg
+
+    @commands.command()
+    async def afk(self, ctx, *, reason="AFK"):
+        """Initialize AFK protocol for the user"""
+        if "@everyone" in reason or "@here" in reason or "<@&" in reason:
+            return await ctx.send("apni dalali apne ghar dekhye")
+            
+        afk_data = load_afk(ctx.guild.id)
+        afk_data[str(ctx.author.id)] = reason
+        save_afk(afk_data, ctx.guild.id)
+        
+        embed = discord.Embed(
+            title="🛰️ AFK PROTOCOL ACTIVATED",
+            description=(
+                "```ansi\n"
+                f"\u001b[1;33mSTATUS :\u001b[0m \u001b[0;37mOFF-GRID\u001b[0m\n"
+                f"\u001b[1;33mREASON :\u001b[0m \u001b[0;37m{reason}\u001b[0m\n"
+                "```"
+            ),
+            color=0xffcc00
+        )
+        embed.set_author(name="TRADERS UNION MANAGER", icon_url=self.bot.user.display_avatar.url)
+        embed.set_footer(text=f"User: {ctx.author.name} • Deep Sleep Mode")
+        await ctx.send(embed=embed)
+
+    @commands.command(name="dev", aliases=["developer"])
+    async def developer_info(self, ctx):
+        """Show bot developer information"""
+        developer_id = 1170979888019292261
+        embed = discord.Embed(
+            title="👨‍💻 BOT DEVELOPER",
+            description=(
+                f"**Developer:** <@{developer_id}>\n"
+                f"**ID:** `{developer_id}`\n"
+                "**Username:** `90_alones`\n"
+                "**Name:** `fahad`\n"
+                "**Note:** `Single developer of this bot`"
+            ),
+            color=0x2b2d31
+        )
+        embed.set_footer(text="TRADERS UNION • Developer Info")
+        await ctx.send(embed=embed)
+
     @commands.command(name="help")
     async def help_command(self, ctx):
         """Show the Traders Union Help Terminal"""
