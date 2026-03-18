@@ -162,6 +162,11 @@ class Moderation(commands.Cog):
         today = datetime.utcnow().strftime("%Y-%m-%d")
 
         load_msg = await ctx.send("🔨 `TERMINATING ENTITY ACCESS...`")
+        await asyncio.sleep(0.5)
+        await load_msg.edit(content="🛰️ `CONNECTING TO DISCORD GATEWAY...`")
+        await asyncio.sleep(0.5)
+        await load_msg.edit(content="💎 `DECRYPTING ENTITY DATA...`")
+        await asyncio.sleep(0.5)
         
         await member.ban(reason=reason)
 
@@ -170,6 +175,7 @@ class Moderation(commands.Cog):
             description=(
                 "```ansi\n"
                 f"\u001b[1;31mENTITY   :\u001b[0m \u001b[0;37m{member}\u001b[0m\n"
+                f"\u001b[1;31mID       :\u001b[0m \u001b[0;37m{member.id}\u001b[0m\n"
                 f"\u001b[1;31mSTRIKE   :\u001b[0m \u001b[0;37mHARD BAN\u001b[0m\n"
                 f"\u001b[1;31mREASON   :\u001b[0m \u001b[0;37m{reason}\u001b[0m\n"
                 "```"
@@ -177,6 +183,8 @@ class Moderation(commands.Cog):
             color=0x000000
         )
         embed.set_author(name="TRADERS UNION HIGH COMMAND", icon_url=self.bot.user.display_avatar.url)
+        embed.set_footer(text=f"TERMINATED BY {ctx.author.name.upper()}", icon_url=ctx.author.display_avatar.url)
+        
         await load_msg.delete()
         await ctx.send(embed=embed)
         await send_modlog(self.bot, ctx, "Ban", target=member, reason=reason)

@@ -444,11 +444,34 @@ class Utility(commands.Cog):
 
     @commands.command(aliases=['av'])
     async def avatar(self, ctx, member: discord.Member = None):
+        """Deep scan a user's visual identity signature"""
         member = member or ctx.author
-        embed = discord.Embed(title=f"| VISUAL INTEL | {member.name.upper()}", color=member.color)
-        embed.set_image(url=member.display_avatar.url)
-        embed.set_footer(text=f"Traders Union Visual Records • {ctx.author.name}", icon_url=ctx.author.display_avatar.url)
-        await ctx.send(embed=embed)
+        
+        load_msg = await ctx.send(f"🖼️ `EXTRACTING VISUAL DATA FOR {member.name.upper()}...`")
+        await asyncio.sleep(0.5)
+        
+        avatar_url = member.display_avatar.url
+        logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
+        
+        embed = discord.Embed(title=f"| VISUAL INTEL | {member.name.upper()}", color=member.color or 0x2b2d31)
+        embed.set_author(name="TRADERS UNION VISUAL RECON", icon_url=logo)
+        embed.set_image(url=avatar_url)
+        
+        intel_block = (
+            "```ansi\n"
+            f"\u001b[1;36mENTITY      :\u001b[0m \u001b[0;37m{member}\u001b[0m\n"
+            f"\u001b[1;36mID          :\u001b[0m \u001b[0;37m{member.id}\u001b[0m\n"
+            f"\u001b[1;36mRESOLUTION  :\u001b[0m \u001b[0;37m1024x1024 (ENHANCED)\u001b[0m\n"
+            "```"
+        )
+        embed.add_field(name="🛰️ VISUAL METADATA", value=intel_block, inline=False)
+        embed.set_footer(text=f"Traders Union Visual Records • Requested by {ctx.author.name}", icon_url=ctx.author.display_avatar.url)
+        
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Download Asset", url=avatar_url, style=discord.ButtonStyle.link))
+        
+        await load_msg.delete()
+        await ctx.send(embed=embed, view=view)
 
     @commands.command(name="social")
     async def social(self, ctx):
