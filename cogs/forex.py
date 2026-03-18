@@ -756,24 +756,32 @@ class ForexNews(commands.Cog):
 
         # 1. MAIN HEADER EMBED
         date_display = now_pkr.strftime('%A, %b %d, %Y')
+        logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         main_embed = discord.Embed(
-            title="💎 TRADERS UNION MANAGER | DAILY DASHBOARD",
+            title="◈ TRADERS UNION ░ MARKET INTELLIGENCE GRID",
             description=(
-                f"**📅 REPORT DATE:** `{date_display}`\n"
-                f"**SESSION:** `TRADING OPEN` | **PKT TIME:** `{now_pkr.strftime('%I:%M %p')}`\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                "```ansi\n"
+                "\u001b[0;36m┌──────────────────────────────────────┐\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mDATE    \u001b[0m \u001b[1;33m{date_display.upper()}\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mTIME    \u001b[0m \u001b[1;32m{now_pkr.strftime('%I:%M %p')} PKT\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mFEED    \u001b[0m \u001b[1;32m● LIVE STREAM\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mSESSION \u001b[0m \u001b[1;32m● MARKET OPEN\u001b[0m\n"
+                "\u001b[0;36m└──────────────────────────────────────┘\u001b[0m\n"
+                "```"
             ),
-            color=0x2b2d31
+            color=0x00d4ff,
+            timestamp=datetime.utcnow()
         )
-        main_embed.set_author(name="TRADERS UNION", icon_url="https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441")
+        main_embed.set_author(name="⬡ TRADERS UNION  ◈  INTELLIGENCE PLATFORM", icon_url=logo)
+        main_embed.set_footer(text="TRADERS UNION  ◈  LIVE DATA STREAM")
         await ctx.send(embed=main_embed)
 
         # 2. SEPARATE EMBEDS PER IMPACT
         impact_order = [
-            ("High", "🔴 HIGH IMPACT EVENTS", 0xff4b4b),
-            ("Medium", "🟠 MEDIUM IMPACT EVENTS", 0xffa500),
-            ("Low", "🟡 LOW IMPACT EVENTS", 0xbcbcbc),
-            ("Holiday", "🟣 HOLIDAY / MARKET CLOSURES", 0xa020f0)
+            ("High",    "🔻 HIGH IMPACT ░ CRITICAL EVENTS",       0xff2d2d),
+            ("Medium",  "🔸 MEDIUM IMPACT ░ TRACKED EVENTS",      0xff8c00),
+            ("Low",     "◈  LOW IMPACT ░ MONITORED EVENTS",       0x00aaff),
+            ("Holiday", "⬡  MARKET CLOSURES ░ HOLIDAY",           0x9b59b6),
         ]
 
         for imp_key, title, color in impact_order:
@@ -785,19 +793,32 @@ class ForexNews(commands.Cog):
             for ev in sorted(events, key=lambda x: x['date']):
                 ev_dt = datetime.fromisoformat(ev['date']).astimezone(pytz.timezone('Asia/Karachi'))
                 is_p = ev_dt < now_pkr
-                
+
                 time_f = ev_dt.strftime('%I:%M %p')
                 date_f = ev_dt.strftime('%a, %b %d')
-                status = "✅" if is_p else "•"
-                
-                # Dynamic Result Coloring
-                data_str = f"**{ev['actual']}**" if ev.get('actual') else f"`FCS: {ev.get('forecast', '---')}`"
-                
-                group_text += f"{status} `{date_f}` | `{time_f}` | **{ev['country']}** | {ev['title']}\n└ Result: {data_str}\n\n"
+
+                if ev.get('actual'):
+                    data_str = f"✅ **{ev['actual']}**"
+                else:
+                    data_str = f"📊 `FCS: {ev.get('forecast', '---')}`"
+
+                if is_p:
+                    group_text += (
+                        f"✦ ~~{ev['title']}~~ · `{ev['country']}`\n"
+                        f"  ↳ 🕐 `{time_f}` ┊ 📅 `{date_f}` ┊ {data_str}\n\n"
+                    )
+                else:
+                    group_text += (
+                        f"◈ **{ev['title']}** · `{ev['country']}`\n"
+                        f"  ↳ 🕐 `{time_f}` ┊ 📅 `{date_f}` ┊ {data_str}\n\n"
+                    )
 
             if group_text:
                 imp_embed = discord.Embed(title=title, description=group_text, color=color)
-                imp_embed.set_footer(text=f"TRADERS UNION • {imp_key.upper()} ANALYSIS", icon_url="https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441")
+                imp_embed.set_footer(
+                    text=f"TRADERS UNION  ◈  {imp_key.upper()} ANALYSIS  •  LIVE DATA STREAM",
+                    icon_url=logo
+                )
                 await ctx.send(embed=imp_embed)
 
     @commands.command(name="reminders", aliases=["reminderstatus"])
@@ -948,15 +969,19 @@ class ForexNews(commands.Cog):
                             lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
 
                         embed = discord.Embed(
-                            title=f"NO REMINDERS TODAY, SHOWING {label}",
+                            title=f"◈ QUEUE OFFLINE ░ NO H/M TODAY ─→ {label}",
                             description=(
-                                f"Now (PKT): `{now_pkt.strftime('%I:%M %p')}`\n"
-                                f"{label} (PKT): `{day_str}`\n\n"
-                                f"Nearest events {label.lower()} (any impact):\n" + "\n".join(lines)
+                                "```ansi\n"
+                                "\u001b[1;31m STATUS  \u001b[0m \u001b[0;37mNO HIGH/MEDIUM IMPACT TODAY\u001b[0m\n"
+                                f"\u001b[1;36m NOW PKT \u001b[0m \u001b[1;33m{now_pkt.strftime('%I:%M %p')}\u001b[0m\n"
+                                f"\u001b[1;36m {label:<7} \u001b[0m \u001b[0;37m{day_str}\u001b[0m\n"
+                                f"\u001b[1;36m SOURCE  \u001b[0m \u001b[1;32m{source_label}\u001b[0m\n"
+                                "```\n"
+                                f"**Nearest events {label.lower()} (all impacts):**\n" + "\n".join(lines)
                             ),
                             color=0xf39c12
                         )
-                        embed.set_footer(text=f"Source: {source_label}")
+                        embed.set_footer(text=f"TRADERS UNION  ◈  {source_label}  •  Low/Unknown impact won't schedule")
                         return await ctx.send(embed=embed)
 
                 day_name = now_pkt.strftime("%A")
@@ -996,14 +1021,18 @@ class ForexNews(commands.Cog):
                 lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
 
             embed = discord.Embed(
-                title="NO HIGH/MEDIUM REMINDERS FOUND",
+                title="◈ QUEUE OFFLINE ░ NO HIGH/MEDIUM EVENTS",
                 description=(
-                    f"Now (PKT): `{now_pkt.strftime('%I:%M %p')}` | Date: `{now_pkt.strftime('%Y-%m-%d')}`\n"
-                    "Nearest events today (any impact):\n" + "\n".join(lines)
+                    "```ansi\n"
+                    "\u001b[1;31m STATUS \u001b[0m \u001b[0;37mNO HIGH/MEDIUM IMPACT REMAINING\u001b[0m\n"
+                    f"\u001b[1;36m NOW    \u001b[0m \u001b[1;33m{now_pkt.strftime('%I:%M %p')} PKT\u001b[0m\n"
+                    f"\u001b[1;36m DATE   \u001b[0m \u001b[0;37m{now_pkt.strftime('%Y-%m-%d')}\u001b[0m\n"
+                    "```\n"
+                    "**Nearest events today (all impacts):**\n" + "\n".join(lines)
                 ),
                 color=0xf39c12
             )
-            embed.set_footer(text=f"Source: {source_label} • If impact is Low/Unknown, reminder won't schedule.")
+            embed.set_footer(text=f"TRADERS UNION  ◈  {source_label}  •  Low/Unknown impact won't schedule")
             return await ctx.send(embed=embed)
 
         # Check if we're showing today or tomorrow's news
@@ -1014,46 +1043,57 @@ class ForexNews(commands.Cog):
         date_display = first_event_pkt.strftime('%a, %b %d')
 
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
-        
+
         embed = discord.Embed(
-            title=f"💎 TRADERS UNION | REMINDER MONITOR ({date_label})",
-            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • {date_display} • REAL-TIME TRACKING\u001b[0m\n```",
-            color=0x2b2d31
+            title=f"⚡ REMINDER MATRIX ░ {date_label}",
+            description=(
+                "```ansi\n"
+                "\u001b[0;36m┌──────────────────────────────────────┐\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mSOURCE   \u001b[0m \u001b[1;32m{source_label}\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mDATE     \u001b[0m \u001b[1;33m{date_display} (PKT)\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mTRACKING \u001b[0m \u001b[1;32m● REAL-TIME\u001b[0m\n"
+                "\u001b[0;36m└──────────────────────────────────────┘\u001b[0m\n"
+                "```"
+            ),
+            color=0x00d4ff
         )
-        embed.set_author(name="TRADERS UNION ANALYTICS", icon_url=logo)
+        embed.set_author(name="⬡ TRADERS UNION  ◈  REMINDER SYSTEM", icon_url=logo)
 
         # Section 1: Events within 30 minutes (URGENT)
         if within_30_min:
-            urgent_text = "**⚡ COMING IN 30 MINUTES:**\n"
+            urgent_text = ""
             for item in sorted(within_30_min, key=lambda x: x['diff']):
                 ev = item['event']
                 pkt_time = item['time'].astimezone(pytz.timezone('Asia/Karachi'))
                 mins_left = int(item['diff'])
                 impact_c = "🔴" if ev['impact'] == "High" else "🟠"
-                
+                bar_filled = max(1, 10 - int(mins_left / 3))
+                bar = "█" * bar_filled + "░" * (10 - bar_filled)
                 urgent_text += (
-                    f"{impact_c} **{ev['title']}** ({ev['country']})\n"
-                    f"└ ⏱️ `{mins_left} min remaining` | 📅 `{pkt_time.strftime('%a, %b %d')}` | Time: `{pkt_time.strftime('%I:%M %p')} PKT`\n\n"
+                    f"{impact_c} **{ev['title']}** · `{ev['country']}`\n"
+                    f"  ╠ ⏱ `T−{mins_left:02d}m`  🕐 `{pkt_time.strftime('%I:%M %p')} PKT`\n"
+                    f"  ╚ `▐{bar}▌` **IMMINENT**\n\n"
                 )
-            embed.description += urgent_text + "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            embed.add_field(name="⚡ ─── IMMINENT  [< 30 MIN] ───", value=urgent_text, inline=False)
 
         # Section 2: Other upcoming reminders
         other_reminders = [r for r in upcoming_reminders if r['diff'] > 30]
         if other_reminders:
-            reminder_text = "**📋 UPCOMING REMINDERS:**\n"
+            reminder_text = ""
             for item in sorted(other_reminders, key=lambda x: x['diff'])[:8]:
                 ev = item['event']
                 pkt_time = item['time'].astimezone(pytz.timezone('Asia/Karachi'))
-                status = "✅ SENT" if item['sent'] else "⏲️ PENDING"
+                status_icon = "✅" if item['sent'] else "⏳"
+                status_txt = "DISPATCHED" if item['sent'] else "ARMED"
                 impact_c = "🔴" if ev['impact'] == "High" else "🟠"
-                
                 reminder_text += (
-                    f"{impact_c} **{ev['title']}**\n"
-                    f"└ 📅 `{pkt_time.strftime('%a, %b %d')}` | Time: `{pkt_time.strftime('%I:%M %p')} PKT` | Status: `{status}`\n\n"
+                    f"{impact_c} **{ev['title']}** · `{ev['country']}`\n"
+                    f"  ╠ 🕐 `{pkt_time.strftime('%I:%M %p')} PKT` ┊ 📅 `{pkt_time.strftime('%a, %b %d')}`\n"
+                    f"  ╚ {status_icon} `{status_txt}`\n\n"
                 )
-            embed.description += reminder_text
+            embed.add_field(name="📋 ─── UPCOMING QUEUE ───", value=reminder_text, inline=False)
 
-        embed.set_footer(text="TRADERS UNION • Live API Data Feed")
+        embed.set_footer(text="TRADERS UNION  ◈  AUTO REMINDER ENGINE  •  LIVE FEED")
         await ctx.send(embed=embed)
 
     @commands.command(name="refreshnews")
@@ -1422,14 +1462,19 @@ class ForexNews(commands.Cog):
                             mins = int(diff)
                             lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
                         embed = discord.Embed(
-                            title=f"NO HIGH/MEDIUM TODAY, SHOWING {label} ({day_str})",
+                            title=f"◈ QUEUE OFFLINE ░ NO H/M TODAY ─→ {label}",
                             description=(
-                                f"Source: `{source_label}`\n"
-                                f"Nearest events {label.lower()} (any impact):\n" + "\n".join(lines)
+                                "```ansi\n"
+                                "\u001b[1;31m STATUS  \u001b[0m \u001b[0;37mNO HIGH/MEDIUM IMPACT TODAY\u001b[0m\n"
+                                f"\u001b[1;36m NOW PKT \u001b[0m \u001b[1;33m{now_pkt.strftime('%I:%M %p')}\u001b[0m\n"
+                                f"\u001b[1;36m {label:<7} \u001b[0m \u001b[0;37m{day_str}\u001b[0m\n"
+                                f"\u001b[1;36m SOURCE  \u001b[0m \u001b[1;32m{source_label}\u001b[0m\n"
+                                "```\n"
+                                f"**Nearest events {label.lower()} (all impacts):**\n" + "\n".join(lines)
                             ),
                             color=0xf39c12
                         )
-                        embed.set_footer(text="If impact is Low/Unknown, it will not appear in reminder queue.")
+                        embed.set_footer(text=f"TRADERS UNION  ◈  {source_label}  •  Low/Unknown impact won't appear in queue")
                         return await ctx.send(embed=embed)
 
                 day_name = now_pkt.strftime("%A")
@@ -1466,19 +1511,22 @@ class ForexNews(commands.Cog):
                 lines.append(f"• {when} | {impact} | {country} | {title} | diff: {mins}m")
 
             embed = discord.Embed(
-                title=f"NO HIGH/MEDIUM IMPACT NEWS REMAINING TODAY ({today_str})",
+                title="◈ QUEUE OFFLINE ░ NO HIGH/MEDIUM EVENTS",
                 description=(
-                    f"Source: `{source_label}`\n"
-                    "This command only lists High/Medium events with time remaining.\n\n"
-                    "Nearest events today (any impact):\n" + "\n".join(lines)
+                    "```ansi\n"
+                    "\u001b[1;31m STATUS \u001b[0m \u001b[0;37mNO HIGH/MEDIUM IMPACT REMAINING\u001b[0m\n"
+                    f"\u001b[1;36m NOW    \u001b[0m \u001b[1;33m{now_pkt.strftime('%I:%M %p')} PKT\u001b[0m\n"
+                    f"\u001b[1;36m DATE   \u001b[0m \u001b[0;37m{today_str}\u001b[0m\n"
+                    "```\n"
+                    "**Nearest events today (all impacts):**\n" + "\n".join(lines)
                 ),
                 color=0xf39c12
             )
-            embed.set_footer(text="If your event shows as Low/Unknown impact, it will not appear here.")
+            embed.set_footer(text=f"TRADERS UNION  ◈  {source_label}  •  Low/Unknown impact won't appear here")
             return await ctx.send(embed=embed)
-        
+
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
-        
+
         if showing_str == today_str:
             day_label = "TODAY"
         elif showing_str == tomorrow_str:
@@ -1486,34 +1534,43 @@ class ForexNews(commands.Cog):
         else:
             day_label = "DAY+2"
         embed = discord.Embed(
-            title=f"🔔 UPCOMING 30-MIN REMINDERS ({day_label})",
-            description=f"```ansi\n\u001b[1;36mSOURCE: {source_label} • {day_label} HIGH/MEDIUM IMPACT NEWS\u001b[0m\n\u001b[0;37m{showing_str} (PKT)\u001b[0m\n```",
-            color=0x3498db
+            title=f"🔔 REMINDER QUEUE ░ {day_label}",
+            description=(
+                "```ansi\n"
+                "\u001b[0;36m┌──────────────────────────────────────┐\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mSOURCE  \u001b[0m \u001b[1;32m{source_label}\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mPERIOD  \u001b[0m \u001b[1;33m{day_label}\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mDATE    \u001b[0m \u001b[0;37m{showing_str} (PKT)\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mFILTER  \u001b[0m \u001b[1;33mHIGH/MEDIUM IMPACT\u001b[0m\n"
+                "\u001b[0;36m└──────────────────────────────────────┘\u001b[0m\n"
+                "```"
+            ),
+            color=0x00d4ff
         )
-        embed.set_author(name="TRADERS UNION REMINDER SYSTEM", icon_url=logo)
-        
+        embed.set_author(name="⬡ TRADERS UNION  ◈  30-MIN REMINDER SYSTEM", icon_url=logo)
+
         reminder_text = ""
         for item in sorted(upcoming_reminders, key=lambda x: x['diff']):
             ev = item['event']
             pkt_time = item['time'].astimezone(pytz.timezone('Asia/Karachi'))
-            
+
             impact_c = "🔴" if ev['impact'] == "High" else "🟠"
             hours = int(item['diff'] // 60)
             mins = int(item['diff'] % 60)
-            time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
-            
-            status = "✅ SENT" if item['sent'] else "⏳ PENDING"
-            
+            time_str = f"{hours}h {mins:02d}m" if hours > 0 else f"{mins:02d}m"
+
+            status_icon = "✅" if item['sent'] else "⏳"
+            status_txt = "DISPATCHED" if item['sent'] else "ARMED"
+
             reminder_text += (
                 f"{impact_c} **{ev['title']}**\n"
-                f"┣ 🌍 {ev['country']}\n"
-                f"┣ ⏰ {pkt_time.strftime('%I:%M %p')} PKT\n"
-                f"┣ ⏱️ T-{time_str}\n"
-                f"┗ Status: `{status}`\n\n"
+                f"  ╠ 🌍 `{ev['country']}` ┊ {status_icon} `{status_txt}`\n"
+                f"  ╠ 🕐 `{pkt_time.strftime('%I:%M %p')} PKT`\n"
+                f"  ╚ ⏱ `T−{time_str}`\n\n"
             )
-        
-        embed.add_field(name="📋 REMINDERS QUEUE", value=reminder_text or "No data", inline=False)
-        embed.set_footer(text="TRADERS UNION • Auto Reminder System")
+
+        embed.add_field(name="📋 ─── 30-MIN REMINDER QUEUE ───", value=reminder_text or "`No events`", inline=False)
+        embed.set_footer(text="TRADERS UNION  ◈  30-MIN REMINDER ENGINE  •  AUTO SCHEDULER")
         await ctx.send(embed=embed)
 
     @commands.command(name="setnews")
@@ -1558,17 +1615,20 @@ class ForexNews(commands.Cog):
         set_reminder_channel_guild(ctx.guild.id, channel.id)
         logo = "https://images-ext-1.discordapp.net/external/jzyE2BnHgBbYMApzoz6E48_5VB46NerYCJWkERJ6c-U/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1461756969231585470/51750d5207fa64a0a6f3f966013c8c9e.webp?format=webp&width=441&height=441"
         embed = discord.Embed(
-            title="✅ REMINDER CHANNEL SET",
+            title="◈ REMINDER SYSTEM ░ CHANNEL CONFIGURED",
             description=(
                 "```ansi\n"
-                f"\u001b[1;36mCHANNEL :\u001b[0m \u001b[0;37m{channel.name.upper()}\u001b[0m\n"
-                "\u001b[1;33mMODE    :\u001b[0m \u001b[0;37m30-MIN NEWS REMINDERS\u001b[0m\n"
+                "\u001b[0;36m┌──────────────────────────────────────┐\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mSTATUS  \u001b[0m \u001b[1;32m● ONLINE\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mCHANNEL \u001b[0m \u001b[1;37m#{channel.name.upper()}\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mMODE    \u001b[0m \u001b[1;33m30-MIN NEWS ALERTS\u001b[0m\n"
+                "\u001b[0;36m└──────────────────────────────────────┘\u001b[0m\n"
                 "```"
             ),
-            color=0x2ecc71
+            color=0x00d4ff
         )
-        embed.set_author(name="TRADERS UNION COMMAND", icon_url=logo)
-        embed.set_footer(text="30-minute reminders will be posted here")
+        embed.set_author(name="⬡ TRADERS UNION  ◈  SYSTEM CONFIG", icon_url=logo)
+        embed.set_footer(text="TRADERS UNION  ◈  AUTO REMINDER ENGINE")
         await ctx.send(embed=embed)
 
     @reminder_group.command(name="test")
@@ -1586,16 +1646,22 @@ class ForexNews(commands.Cog):
 
         now_pkt = datetime.now(pytz.timezone("Asia/Karachi"))
         embed = discord.Embed(
-            title="⏳ TEST: News in 30 Mins",
+            title="⚡ TEST REMINDER ░ 30-MIN ALERT SIMULATION",
             description=(
-                "**This is a test reminder message.**\n"
-                f"**PKT Time:** `{now_pkt.strftime('%I:%M %p')}`\n"
-                f"**Target Channel:** {target_channel.mention}"
+                "```ansi\n"
+                "\u001b[0;36m┌──────────────────────────────────────┐\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[1;33m⚡ SIMULATION MODE ACTIVE\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m\n"
+                f"\u001b[0;36m│\u001b[0m  \u001b[0;37mTIME    \u001b[0m \u001b[1;32m{now_pkt.strftime('%I:%M %p')} PKT\u001b[0m\n"
+                "\u001b[0;36m│\u001b[0m  \u001b[0;37mSTATUS  \u001b[0m \u001b[1;33m● TEST PULSE SENT\u001b[0m\n"
+                "\u001b[0;36m└──────────────────────────────────────┘\u001b[0m\n"
+                "```\n"
+                f"*This is a test reminder message  •  Target: {target_channel.mention}*"
             ),
-            color=0x2b2d31,
+            color=0xf39c12,
             timestamp=datetime.utcnow()
         )
-        embed.set_footer(text="TRADERS UNION • Reminder Test")
+        embed.set_footer(text="TRADERS UNION  ◈  REMINDER TEST PULSE")
 
         await target_channel.send(
             content=news_ping if news_ping else None,
@@ -1604,10 +1670,11 @@ class ForexNews(commands.Cog):
         )
 
         conf = discord.Embed(
-            title="✅ REMINDER TEST SENT",
-            description=f"Sent test reminder to {target_channel.mention}",
-            color=0x2ecc71
+            title="◈ TEST PULSE DISPATCHED",
+            description=f"**Target:** {target_channel.mention}\n`REMINDER TEST SENT SUCCESSFULLY`",
+            color=0x00d4ff
         )
+        conf.set_footer(text="TRADERS UNION  ◈  SYSTEM CHECK")
         await ctx.send(embed=conf)
 
     @commands.command(name="alert", aliases=["setalert", "sessionalert"])
