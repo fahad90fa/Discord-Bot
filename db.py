@@ -1,4 +1,6 @@
 import threading
+import sqlite3
+import traceback
 from datetime import datetime
 
 import psycopg2
@@ -7,21 +9,43 @@ import psycopg2.extras as extras
 DB_URL = "postgresql://neondb_owner:npg_xig0brACE6hc@ep-lucky-sound-aixg6u42-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 _conn = None
+_db_type = "postgres" # "postgres" or "sqlite"
 _lock = threading.Lock()
 
 
 def _connect():
-    return psycopg2.connect(DB_URL)
+    global _db_type
+    try:
+        conn = psycopg2.connect(DB_URL)
+        _db_type = "postgres"
+        return conn
+    except Exception as e:
+        print(f"⚠️ PostgreSQL connection failed: {e}")
+        print("📁 Falling back to local SQLite database (bot.db)")
+        conn = sqlite3.connect("bot.db", check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        _db_type = "sqlite"
+        return conn
 
 
 def init_db():
-    global _conn
+    global _conn, _db_type
     with _lock:
-        if _conn is None or _conn.closed:
+        if _conn is None or (hasattr(_conn, "closed") and _conn.closed):
             _conn = _connect()
+        
         cur = _conn.cursor()
         try:
-            cur.execute(
+            # Helper to replace PostgreSQL-specific types for SQLite
+            def run_sql(sql):
+                if _db_type == "sqlite":
+                    sql = sql.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
+                    sql = sql.replace("BOOLEAN NOT NULL DEFAULT FALSE", "INTEGER NOT NULL DEFAULT 0")
+                    sql = sql.replace("BOOLEAN NOT NULL DEFAULT TRUE", "INTEGER NOT NULL DEFAULT 1")
+                    sql = sql.replace("NUMERIC", "REAL")
+                cur.execute(sql)
+
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS modlog_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -29,7 +53,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS audit_log_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -37,7 +61,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS welcome_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -45,7 +69,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS news_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -54,7 +78,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS session_alert_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -69,10 +93,14 @@ def init_db():
                 )
                 """
             )
-            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_sydney_date TEXT")
-            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_tokyo_date TEXT")
-            cur.execute("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_newyork_date TEXT")
-            cur.execute(
+            
+            # For migrations, we need to be careful with ALTER TABLE in SQLite
+            if _db_type == "postgres":
+                run_sql("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_sydney_date TEXT")
+                run_sql("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_tokyo_date TEXT")
+                run_sql("ALTER TABLE session_alert_config ADD COLUMN IF NOT EXISTS last_newyork_date TEXT")
+            
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS antilink_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -82,7 +110,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS antispam_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -93,7 +121,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS automod_caps_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -105,7 +133,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS automod_emoji_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -115,7 +143,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS automod_bypass_role (
                   guild_id BIGINT PRIMARY KEY,
@@ -123,7 +151,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS afk_status (
                   guild_id BIGINT NOT NULL,
@@ -133,7 +161,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS ban_limits (
                   guild_id BIGINT NOT NULL,
@@ -144,7 +172,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS attendance_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -154,7 +182,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS attendance_batches (
                   guild_id BIGINT NOT NULL,
@@ -164,7 +192,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS attendance_records (
                   guild_id BIGINT NOT NULL,
@@ -178,7 +206,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS union_points (
                   guild_id BIGINT NOT NULL,
@@ -191,7 +219,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS union_logs (
                   guild_id BIGINT NOT NULL,
@@ -206,7 +234,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS union_managers (
                   guild_id BIGINT NOT NULL,
@@ -215,7 +243,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS union_leaderboard_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -224,7 +252,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS union_log_channel (
                   guild_id BIGINT PRIMARY KEY,
@@ -232,7 +260,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS giveaways (
                   guild_id BIGINT NOT NULL,
@@ -251,7 +279,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS announcements (
                   id SERIAL PRIMARY KEY,
@@ -264,7 +292,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS tickets_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -275,7 +303,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS ticket_staff_roles (
                   guild_id BIGINT NOT NULL,
@@ -284,7 +312,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS ticket_reasons (
                   guild_id BIGINT NOT NULL,
@@ -293,7 +321,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS tickets (
                   guild_id BIGINT NOT NULL,
@@ -306,7 +334,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS vc_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -319,7 +347,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS vc_temp_channels (
                   guild_id BIGINT NOT NULL,
@@ -330,7 +358,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS sent_news (
                   guild_id BIGINT NOT NULL,
@@ -343,7 +371,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS news_cache (
                   event_id TEXT PRIMARY KEY,
@@ -358,7 +386,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS snipe_cache (
                   guild_id BIGINT NOT NULL,
@@ -376,7 +404,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS bot_role_members (
                   guild_id BIGINT NOT NULL,
@@ -386,7 +414,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS no_prefix_users (
                   guild_id BIGINT NOT NULL,
@@ -395,7 +423,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS ai_keys (
                   key_name TEXT PRIMARY KEY,
@@ -404,7 +432,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS invite_config (
                   guild_id BIGINT PRIMARY KEY,
@@ -412,7 +440,7 @@ def init_db():
                 )
                 """
             )
-            cur.execute(
+            run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS invite_events (
                   id SERIAL PRIMARY KEY,
@@ -436,7 +464,8 @@ def init_db():
 
 
 def _ensure():
-    if _conn is None or _conn.closed:
+    global _conn
+    if _conn is None or (hasattr(_conn, "closed") and _conn.closed):
         init_db()
 
 
@@ -447,15 +476,30 @@ def _now():
 def execute(sql, params=(), fetchone=False, fetchall=False):
     _ensure()
     with _lock:
-        cur = _conn.cursor(cursor_factory=extras.RealDictCursor)
+        if _db_type == "postgres":
+            cur = _conn.cursor(cursor_factory=extras.RealDictCursor)
+        else:
+            cur = _conn.cursor()
+            sql = sql.replace("%s", "?")
+            
         try:
             cur.execute(sql, params)
             row = None
             rows = None
+            
             if fetchone:
-                row = cur.fetchone()
+                res = cur.fetchone()
+                if res and _db_type == "sqlite":
+                    row = dict(res)
+                else:
+                    row = res
             if fetchall:
-                rows = cur.fetchall()
+                res = cur.fetchall()
+                if res and _db_type == "sqlite":
+                    rows = [dict(r) for r in res]
+                else:
+                    rows = res
+                    
             _conn.commit()
             return row if fetchone else rows
         except Exception:
@@ -466,10 +510,15 @@ def execute(sql, params=(), fetchone=False, fetchall=False):
 
 
 def stats():
-    row = execute("SELECT COUNT(*) AS count FROM tickets", fetchone=True)
+    try:
+        row = execute("SELECT COUNT(*) AS count FROM tickets", fetchone=True)
+        keys = row["count"] if row else 0
+    except:
+        keys = 0
+        
     return {
-        "path": "postgres",
+        "path": _db_type,
         "size_bytes": 0,
-        "keys": row["count"] if row else 0,
+        "keys": keys,
         "updated_at": _now()
     }
