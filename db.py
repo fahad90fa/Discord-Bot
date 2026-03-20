@@ -178,10 +178,23 @@ def init_db():
                   guild_id BIGINT PRIMARY KEY,
                   channel_id BIGINT,
                   log_channel_id BIGINT,
-                  attendance_message_id BIGINT
+                  attendance_message_id BIGINT,
+                  reminder_channel_id BIGINT,
+                  last_report_date TEXT
                 )
                 """
             )
+            
+            # Migrations for attendance_config
+            if _db_type == "postgres":
+                run_sql("ALTER TABLE attendance_config ADD COLUMN IF NOT EXISTS reminder_channel_id BIGINT")
+                run_sql("ALTER TABLE attendance_config ADD COLUMN IF NOT EXISTS last_report_date TEXT")
+            else:
+                # SQLite doesn't support ADD COLUMN IF NOT EXISTS easily, so we try/except
+                try: cur.execute("ALTER TABLE attendance_config ADD COLUMN reminder_channel_id BIGINT")
+                except: pass
+                try: cur.execute("ALTER TABLE attendance_config ADD COLUMN last_report_date TEXT")
+                except: pass
             run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS attendance_batches (
@@ -266,9 +279,11 @@ def init_db():
                   guild_id BIGINT NOT NULL,
                   message_id BIGINT NOT NULL,
                   channel_id BIGINT NOT NULL,
+                  host_id BIGINT,
                   prize TEXT NOT NULL,
                   winners INTEGER NOT NULL,
                   ends_at TEXT NOT NULL,
+                  starts_at TEXT,
                   required_role_id BIGINT,
                   min_join_seconds INTEGER NOT NULL DEFAULT 0,
                   active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -279,6 +294,16 @@ def init_db():
                 )
                 """
             )
+            
+            # Migrations for giveaways
+            if _db_type == "postgres":
+                run_sql("ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS host_id BIGINT")
+                run_sql("ALTER TABLE giveaways ADD COLUMN IF NOT EXISTS starts_at TEXT")
+            else:
+                try: cur.execute("ALTER TABLE giveaways ADD COLUMN host_id BIGINT")
+                except: pass
+                try: cur.execute("ALTER TABLE giveaways ADD COLUMN starts_at TEXT")
+                except: pass
             run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS announcements (
@@ -287,11 +312,23 @@ def init_db():
                   channel_id BIGINT NOT NULL,
                   run_at TEXT NOT NULL,
                   content TEXT NOT NULL,
+                  created_by BIGINT,
+                  created_at TEXT,
                   sent BOOLEAN NOT NULL DEFAULT FALSE,
                   sent_at TEXT
                 )
                 """
             )
+            
+            # Migrations for announcements
+            if _db_type == "postgres":
+                run_sql("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS created_by BIGINT")
+                run_sql("ALTER TABLE announcements ADD COLUMN IF NOT EXISTS created_at TEXT")
+            else:
+                try: cur.execute("ALTER TABLE announcements ADD COLUMN created_by BIGINT")
+                except: pass
+                try: cur.execute("ALTER TABLE announcements ADD COLUMN created_at TEXT")
+                except: pass
             run_sql(
                 """
                 CREATE TABLE IF NOT EXISTS tickets_config (
