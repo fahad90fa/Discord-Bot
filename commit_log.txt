@@ -181,3 +181,4 @@
 - [2026-04-01 22:13:28] updated dependencies
 - [2026-04-01 22:13:28] improved security
 - [2026-04-01 22:13:28] enhanced features
+- [2026-04-01 22:13:29] documentation update
